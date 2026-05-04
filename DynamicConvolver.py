@@ -110,9 +110,30 @@ class DynamicConvolver:
 
         return hrirs
 
+    def _compute_segment_gains(self) -> list[float] | None:
+        """
+        Calcule le gain 1/r par segment si la trajectoire expose get_distance().
+
+        Retourne None pour les trajectoires sans notion de distance (circulaire,
+        linéaire angulaire), auquel que SegmentEngine n'applique aucun gain.
+        """
+        if not hasattr(self.trajectory, "get_distance"):
+            return None
+
+        n_segments = int(np.ceil(len(self.signal) / self.engine.segment_samples))
+        segment_s  = self.engine.segment_samples / self.sr
+        R_ref      = getattr(self.trajectory, "R", 2.06)
+
+        gains = []
+        for i in range(n_segments):
+            t_center = (i + 0.5) * segment_s
+            r = self.trajectory.get_distance(t_center)
+            gains.append(float(R_ref / max(r, 0.01)))
+        return gains
+
     def run(self) -> np.ndarray:
         """
-        Orchestration complete: positions -> HRIRs -> rendu binaural.
+        Orchestration complete: positions -> HRIRs -> gains -> rendu binaural.
 
         Retourne
         --------
@@ -120,8 +141,9 @@ class DynamicConvolver:
             Sortie stereo shape (N, 2), egalement stockee dans self.output.
         """
         positions = self._compute_segment_positions()
-        hrirs = self._fetch_hrirs(positions)
-        self.output = self.engine.render(self.signal, hrirs)
+        hrirs     = self._fetch_hrirs(positions)
+        gains     = self._compute_segment_gains()
+        self.output = self.engine.render(self.signal, hrirs, gains_per_segment=gains)
         return self.output
 
     def save(

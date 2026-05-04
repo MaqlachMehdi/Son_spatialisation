@@ -265,6 +265,7 @@ class SegmentEngine:
         self,
         signal: np.ndarray,
         hrirs_per_segment: list[tuple[np.ndarray, np.ndarray]],
+        gains_per_segment: list[float] | None = None,
     ) -> np.ndarray:
         """
         Boucle principale : découpe → convolue → crossfade → overlap-add.
@@ -278,6 +279,9 @@ class SegmentEngine:
             Généré typiquement via :
               positions = trajectory.sample_segments(duration_s, segment_ms)
               hrirs = [hrtf.get_hrir(az, el) for az, el in positions]
+        gains_per_segment : list[float] | None
+            Gain scalaire par segment (ex. loi 1/r pour RectilinearTrajectory).
+            Si None, aucun gain additionnel n'est appliqué (équivalent à 1.0).
 
         Retourne
         --------
@@ -336,11 +340,12 @@ class SegmentEngine:
         out_R   = np.zeros(out_len, dtype=np.float32)
 
         for i, (cL, cR) in enumerate(conv_outs):
+            g   = gains_per_segment[i] if gains_per_segment is not None else 1.0
             pos = i * self.segment_samples
             end = min(pos + len(cL), out_len)
             n   = end - pos
-            out_L[pos:end] += cL[:n]
-            out_R[pos:end] += cR[:n]
+            out_L[pos:end] += cL[:n] * g
+            out_R[pos:end] += cR[:n] * g
 
         # — 5. Normalisation et trim ──────────────────────────────────────
         peak = max(np.max(np.abs(out_L)), np.max(np.abs(out_R))) + 1e-10
