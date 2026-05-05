@@ -304,8 +304,13 @@ class SoundVisu:
         Affiche la sphère de mesure HRTF et les positions d'émission
         de toutes les sources de la scène.
 
-        Les points bleus correspondent aux positions du dataset HRTF.
-        Les marqueurs rouges correspondent aux sources actives de la scène.
+        Repère d'affichage (perspective naturelle de l'auditeur) :
+          • axe horizontal   → Gauche (-) / Droite (+)   [SOFA  -Y]
+          • axe profondeur   → Derrière (-) / Devant (+)  [SOFA  +X]
+          • axe vertical     → Bas (-) / Haut (+)         [SOFA  +Z]
+
+        Les points bleus = positions du dataset HRTF.
+        Les marqueurs rouges = sources actives de la scène.
         """
         if not self.scene.sources:
             raise RuntimeError(
@@ -313,86 +318,74 @@ class SoundVisu:
                 "Ajoutez des sources avant d'appeler plot_scene_sphere()."
             )
 
-        pos = self.scene.hrtf.positions
-        az = np.radians(pos[:, 0])
-        el = np.radians(pos[:, 1])
-        r = pos[:, 2]
+        def sofa_to_display(az_rad, el_rad, r):
+            """
+            Sphérique SOFA → Cartésien d'affichage.
+            SOFA : X=devant, Y=gauche, Z=haut.
+            Affichage : dx=droite, dy=devant, dz=haut.
+              dx = -Y_sofa  (gauche SOFA → côté gauche de l'écran)
+              dy =  X_sofa  (devant SOFA → profondeur de l'écran)
+              dz =  Z_sofa
+            """
+            x_s = r * np.cos(el_rad) * np.cos(az_rad)   # devant SOFA
+            y_s = r * np.cos(el_rad) * np.sin(az_rad)   # gauche SOFA
+            z_s = r * np.sin(el_rad)                     # haut SOFA
+            return -y_s, x_s, z_s                        # dx, dy, dz
 
-        x = r * np.cos(el) * np.cos(az)
-        y = r * np.cos(el) * np.sin(az)
-        z = r * np.sin(el)
+        pos   = self.scene.hrtf.positions
+        az_r  = np.radians(pos[:, 0])
+        el_r  = np.radians(pos[:, 1])
+        r_arr = pos[:, 2]
+        dx, dy, dz = sofa_to_display(az_r, el_r, r_arr)
 
         fig = plt.figure(figsize=(9, 7))
-        ax = fig.add_subplot(111, projection="3d")
-        ax.scatter(
-            x, y, z,
-            s=16,
-            color="#76a9d5",
-            edgecolors="white",
-            linewidths=0.25,
-            alpha=0.8,
-            label="Positions HRTF",
-        )
+        ax  = fig.add_subplot(111, projection="3d")
+        ax.scatter(dx, dy, dz, s=16, color="#76a9d5",
+                   edgecolors="white", linewidths=0.25, alpha=0.8,
+                   label="Positions HRTF")
 
-        src_xyz = []
+        src_pts = []
         for i, src in enumerate(self.scene.sources, start=1):
-            az_s = np.radians(src.azimuth)
-            el_s = np.radians(src.elevation)
-            r_s = float(src.distance)
-            xs = r_s * np.cos(el_s) * np.cos(az_s)
-            ys = r_s * np.cos(el_s) * np.sin(az_s)
-            zs = r_s * np.sin(el_s)
-            src_xyz.append((xs, ys, zs, src))
+            az_s  = np.radians(src.azimuth)
+            el_s  = np.radians(src.elevation)
+            r_s   = float(src.distance)
+            sdx, sdy, sdz = sofa_to_display(az_s, el_s, r_s)
+            src_pts.append((sdx, sdy, sdz))
 
-            ax.scatter(
-                [xs], [ys], [zs],
-                s=85,
-                marker="o",
-                color="#e74c3c",
-                edgecolors="black",
-                linewidths=0.6,
-                zorder=5,
-            )
-            ax.text(
-                xs,
-                ys,
-                zs,
-                f" S{i}",
-                fontsize=9,
-                fontweight="bold",
-                color="#222222",
-            )
+            ax.scatter([sdx], [sdy], [sdz], s=120, marker="o",
+                       color="#e74c3c", edgecolors="black", linewidths=0.8,
+                       zorder=5)
+            ax.text(sdx, sdy, sdz, f"  S{i}\n  Az={src.azimuth}° Él={src.elevation}°",
+                    fontsize=8, fontweight="bold", color="#222222")
 
-        ax.scatter(
-            [], [], [],
-            s=85,
-            marker="o",
-            color="#e74c3c",
-            edgecolors="black",
-            linewidths=0.6,
-            label="Sources de la scène",
-        )
+        ax.scatter([], [], [], s=85, marker="o", color="#e74c3c",
+                   edgecolors="black", linewidths=0.6, label="Sources de la scène")
 
-        # Cadre isotrope pour ne pas déformer la sphère
-        all_x = np.concatenate([x, np.array([p[0] for p in src_xyz], dtype=float)])
-        all_y = np.concatenate([y, np.array([p[1] for p in src_xyz], dtype=float)])
-        all_z = np.concatenate([z, np.array([p[2] for p in src_xyz], dtype=float)])
-        max_range = 0.5 * max(
-            np.ptp(all_x) if len(all_x) > 1 else 1.0,
-            np.ptp(all_y) if len(all_y) > 1 else 1.0,
-            np.ptp(all_z) if len(all_z) > 1 else 1.0,
-        )
-        cx, cy, cz = np.mean(all_x), np.mean(all_y), np.mean(all_z)
-        ax.set_xlim(cx - max_range, cx + max_range)
-        ax.set_ylim(cy - max_range, cy + max_range)
-        ax.set_zlim(cz - max_range, cz + max_range)
+        # Auditeur au centre
+        ax.scatter([0], [0], [0], s=200, marker="^", color="#2ecc71",
+                   edgecolors="black", linewidths=0.8, zorder=6, label="Auditeur")
 
-        ax.set_title("Sphère HRTF et points d'émission des sources", fontsize=12, fontweight="bold")
-        ax.set_xlabel("X (m)")
-        ax.set_ylabel("Y (m)")
-        ax.set_zlabel("Z (m)")
-        ax.grid(True, alpha=0.35)
-        ax.legend(loc="upper right")
+        # Cadre isotrope
+        all_dx = np.append(dx, [p[0] for p in src_pts])
+        all_dy = np.append(dy, [p[1] for p in src_pts])
+        all_dz = np.append(dz, [p[2] for p in src_pts])
+        max_r  = 0.5 * max(np.ptp(all_dx), np.ptp(all_dy), np.ptp(all_dz), 0.1)
+        cx, cy, cz = 0.0, 0.0, 0.0
+        ax.set_xlim(cx - max_r, cx + max_r)
+        ax.set_ylim(cy - max_r, cy + max_r)
+        ax.set_zlim(cz - max_r, cz + max_r)
+
+        ax.set_xlabel("← Gauche  |  Droite →", fontsize=8)
+        ax.set_ylabel("← Derrière  |  Devant →", fontsize=8)
+        ax.set_zlabel("↑ Haut", fontsize=8)
+        ax.set_title("Sphère HRTF et positions des sources\n"
+                     "(vue depuis la droite de l'auditeur, légèrement en hauteur)",
+                     fontsize=11, fontweight="bold")
+
+        # Angle de vue : légèrement au-dessus, depuis l'avant-droite
+        ax.view_init(elev=20, azim=200)
+        ax.grid(True, alpha=0.25)
+        ax.legend(loc="upper right", fontsize=8)
 
         plt.tight_layout()
         plt.show()

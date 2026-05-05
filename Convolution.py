@@ -20,6 +20,7 @@ from scipy.signal import fftconvolve
 
 from hrtf import HRTF
 from Soundsource import SoundSource
+from DistanceModel import DistanceModel
 
 
 class HRTFConvolver:
@@ -98,7 +99,10 @@ class HRTFConvolver:
         """
         convolver = cls(hrtf, azimuth=source.azimuth, elevation=source.elevation)
         convolver.source = source
-        convolver.load_signal(source.path)
+        if source.signal is not None:
+            convolver.load_array(source.signal, source.sr)
+        else:
+            convolver.load_signal(source.path)
         return convolver
 
     # ──────────────────────────────────────────────────────────────────────
@@ -246,14 +250,19 @@ class HRTFConvolver:
         self.output_left, self.output_right = self._conv_freq_R_and_L()
 
         if self.source is not None:
-            g = self.source.total_gain
-            self.output_left  = (self.output_left  * g).astype(np.float32)
-            self.output_right = (self.output_right * g).astype(np.float32)
-            print(f"[HRTFConvolver] Gain appliqué : {g:.4f} "
-                  f"(distance={self.source.distance}m, gain={self.source.gain})")
+            model = DistanceModel(ref_distance=2.06)
+            self.output_left, self.output_right = model.apply(
+                self.output_left,
+                self.output_right,
+                r=self.source.distance,
+                sr=self.sample_rate,
+                user_gain=self.source.gain,
+            )
 
         self.merged_audio = np.stack([self.output_left, self.output_right], axis=1)
         print(f"[HRTFConvolver] merged_audio prêt : shape={self.merged_audio.shape}")
+
+    _SAVE_DIR = Path(__file__).parent / "sound" / "generated"
 
     def save(
         self,
@@ -262,31 +271,44 @@ class HRTFConvolver:
         path_merged: str | Path = "Merged_audio.wav",
     ) -> None:
         """
-        Sauvegarde les signaux convolutés en fichiers WAV.
+        Sauvegarde les signaux convolutés en fichiers WAV dans sound/generated/.
+
+        Si un chemin relatif est fourni, il est résolu depuis sound/generated/.
+        Un chemin absolu est utilisé tel quel.
 
         Paramètres
         ----------
         path_left : str ou Path
-            Chemin du fichier WAV oreille gauche (mono).
+            Nom ou chemin du fichier WAV oreille gauche (mono).
         path_right : str ou Path
-            Chemin du fichier WAV oreille droite (mono).
+            Nom ou chemin du fichier WAV oreille droite (mono).
         path_merged : str ou Path
-            Chemin du fichier WAV stéréo (L+R fusionnés via merge_R_and_L_wav).
+            Nom ou chemin du fichier WAV stéréo fusionné.
         """
         if self.output_left is None or self.output_right is None:
             raise RuntimeError("Appelez run() avant save().")
 
+        def resolve(p: str | Path) -> Path:
+            p = Path(p)
+            return p if p.is_absolute() else self._SAVE_DIR / p
+
+        out_left   = resolve(path_left)
+        out_right  = resolve(path_right)
+        out_merged = resolve(path_merged)
+
+        self._SAVE_DIR.mkdir(parents=True, exist_ok=True)
+
         n = len(self.output_left)
         silence = np.zeros(n, dtype=np.float32)
         # Stéréo [signal, silence] → oreille gauche seulement dans un casque
-        sf.write(str(path_left),  np.stack([self.output_left,  silence], axis=1), self.sample_rate)
+        sf.write(str(out_left),  np.stack([self.output_left,  silence], axis=1), self.sample_rate)
         # Stéréo [silence, signal] → oreille droite seulement dans un casque
-        sf.write(str(path_right), np.stack([silence, self.output_right], axis=1), self.sample_rate)
-        print(f"[HRTFConvolver] Sauvegardé : {path_left}")
-        print(f"[HRTFConvolver] Sauvegardé : {path_right}")
+        sf.write(str(out_right), np.stack([silence, self.output_right], axis=1), self.sample_rate)
+        print(f"[HRTFConvolver] Sauvegardé : {out_left}")
+        print(f"[HRTFConvolver] Sauvegardé : {out_right}")
 
         # Merged : les deux canaux ensemble (déjà disponibles en mémoire)
-        sf.write(str(path_merged), self.merged_audio, self.sample_rate)
+        sf.write(str(out_merged), self.merged_audio, self.sample_rate)
         print(f"[HRTFConvolver] Sauvegardé : {path_merged}")
 
     # ──────────────────────────────────────────────────────────────────────

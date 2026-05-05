@@ -1,0 +1,729 @@
+\documentclass[12pt, a4paper]{article}
+
+% ── Encodage et langue ────────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+
+% ── Mathématiques ─────────────────────────────────────────────────────────────
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+\usepackage{bm}
+
+% ── Mise en page ──────────────────────────────────────────────────────────────
+\usepackage[a4paper, margin=2.5cm]{geometry}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{enumitem}
+
+% ── Algorithmes ───────────────────────────────────────────────────────────────
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+% ── Environnements mathématiques ──────────────────────────────────────────────
+\theoremstyle{definition}
+\newtheorem{definition}{Définition}[section]
+\newtheorem{proposition}{Proposition}[section]
+\newtheorem{theoreme}{Théorème}[section]
+\newtheorem{remarque}{Remarque}[section]
+\newtheorem{corollaire}{Corollaire}[section]
+
+% ── Macros ────────────────────────────────────────────────────────────────────
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\C}{\mathbb{C}}
+\newcommand{\vect}[1]{\bm{#1}}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+\newcommand{\abs}[1]{\left| #1 \right|}
+\newcommand{\inner}[2]{\langle #1,\, #2 \rangle}
+\newcommand{\cross}{\times}
+\newcommand{\HRIR}{\mathrm{HRIR}}
+\newcommand{\HRTF}{\mathrm{HRTF}}
+\newcommand{\ITD}{\mathrm{ITD}}
+\DeclareMathOperator{\argmax}{argmax}
+\DeclareMathOperator{\irfft}{IRFFT}
+\DeclareMathOperator{\rfft}{RFFT}
+\DeclareMathOperator{\sgn}{sgn}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\title{%
+  \textbf{Interpolation Sphérique Barycentrique des Fonctions de Transfert \\
+  Relatives à la Tête (HRTF)} \\[0.5em]
+  \large Décomposition Phase-Minimum et Délai d'Onset pour \\
+  une Spatialisation Binaurale Continue
+}
+\author{Mehdi Maqlach}
+\date{\today}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+La spatialisation binaurale repose sur la convolution d'un signal source avec
+une Fonction de Transfert Relative à la Tête (HRTF), mesurée sur une grille
+discrète de positions angulaires. Positionner une source sonore à une position
+arbitraire requiert une interpolation entre mesures voisines.
+L'interpolation directe des spectres complexes — mathématiquement équivalente
+à une moyenne pondérée dans le domaine temporel — induit des
+\emph{filtres en peigne} dont les premiers zéros peuvent tomber dans la bande
+audible (typiquement $[4\,\text{kHz},\,11\,\text{kHz}]$ pour le dataset
+IRCAM LISTEN à espacement $5^\circ$/$15^\circ$).
+Ce document présente une méthode rigoureuse fondée sur la décomposition de
+chaque réponse impulsionnelle (HRIR) en sa composante phase-minimum et son
+retard d'onset, interpolés séparément via des coordonnées barycentriques
+sphériques calculées à partir d'une triangulation de Delaunay sur la sphère
+unité. La reconstruction utilise la méthode du cepstre réel et l'application
+exacte d'un retard fractionnaire dans le domaine fréquentiel.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Contexte et Notation}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\subsection{Modèle de spatialisation binaurale}
+
+Un dataset HRTF contient, pour chaque position de source
+$(\varphi_i, \vartheta_i) \in [0^\circ, 360^\circ) \times [-90^\circ, 90^\circ]$
+(azimut, élévation), une paire de réponses impulsionnelles
+$h_i^L, h_i^R \in \R^N$ correspondant respectivement à l'oreille gauche et à
+l'oreille droite. Le signal binaural $y^{L,R}(t)$ est obtenu par convolution :
+
+\begin{equation}
+  y^{L,R}(t) = x(t) * h^{L,R}(t)
+\end{equation}
+
+où $x(t)$ est le signal source mono. Le dataset IRCAM LISTEN (IRC\_1002)
+utilisé dans ce travail contient $M = 187$ positions de mesure à
+$r_0 = 2{,}06\,\text{m}$, avec un espacement de $5^\circ$ en azimut
+(plan horizontal) et $15^\circ$ en élévation, à une fréquence
+d'échantillonnage $f_s = 44\,100\,\text{Hz}$ et $N = 512$ échantillons
+par HRIR.
+
+\subsection{Notation}
+
+Tout au long du document, on note :
+\begin{itemize}
+  \item $\vect{p} \in \mathcal{S}^2$ : vecteur unitaire de $\R^3$ sur la sphère unité,
+  \item $\vect{p}(\varphi, \vartheta) = (\cos\vartheta\cos\varphi,\;
+        \cos\vartheta\sin\varphi,\; \sin\vartheta)$ : coordonnées sphériques
+        vers cartésiennes (convention SOFA),
+  \item $\mathcal{H}(\vect{p}_i) = (h_i^L, h_i^R)$ : paire HRIR mesurée à la
+        position $\vect{p}_i$,
+  \item $H_i^{L,R}(k) = \rfft\{h_i^{L,R}\}[k]$ : transformée de Fourier
+        discrète réelle, $k = 0, \ldots, \lfloor N/2 \rfloor$,
+  \item $\tau_i^{L,R} \in \R$ : retard d'onset en échantillons.
+\end{itemize}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Limite de l'Approche Plus-Proche-Voisin}
+% ═════════════════════════════════════════════════════════════════════════════
+
+L'approche naïve de sélection d'une HRIR consiste à choisir la position mesurée
+la plus proche au sens de la distance grand-cercle :
+
+\begin{equation}
+  i^* = \argmax_{i} \left[
+    \sin\vartheta_q \sin\vartheta_i
+    + \cos\vartheta_q \cos\vartheta_i \cos(\varphi_q - \varphi_i)
+  \right]
+\end{equation}
+
+où $(\varphi_q, \vartheta_q)$ est la position cible. L'utilisation de la
+distance grand-cercle (et non de la différence euclidienne des angles) est
+nécessaire pour garantir la continuité aux pôles.
+
+Cette approche produit des transitions \emph{en paliers} lorsqu'une source se
+déplace continûment : à chaque changement du voisin le plus proche, le
+spectre subit une discontinuité brutale, généralement audible au-delà de
+quelques dizaines de degrés par seconde.
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Triangulation de Delaunay Sphérique}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\subsection{Construction par enveloppe convexe}
+
+\begin{theoreme}[Delaunay sphérique via enveloppe convexe]
+  Soit $\mathcal{P} = \{\vect{p}_1, \ldots, \vect{p}_M\} \subset \mathcal{S}^2$
+  un ensemble de points sur la sphère unité. Les faces triangulaires de
+  l'enveloppe convexe $\mathrm{conv}(\mathcal{P}) \subset \R^3$ forment
+  exactement la triangulation de Delaunay sphérique de $\mathcal{P}$.
+\end{theoreme}
+
+Ce résultat permet d'utiliser directement un algorithme d'enveloppe convexe 3D
+(complexité $\mathcal{O}(M \log M)$) pour construire la triangulation, sans
+implémenter d'algorithme de Delaunay sphérique spécifique.
+
+\subsection{Orientation des faces}
+
+Chaque face triangulaire $\mathcal{F} = (i_A, i_B, i_C)$ doit être orientée
+dans le sens trigonométrique vu de l'extérieur (normale sortante). On vérifie
+l'orientation via :
+
+\begin{equation}
+  \text{si } \left[(\vect{p}_{i_B} - \vect{p}_{i_A}) \cross
+  (\vect{p}_{i_C} - \vect{p}_{i_A})\right] \cdot \vect{n}_{\mathcal{F}} < 0,
+  \quad \text{permuter } i_B \leftrightarrow i_C
+\end{equation}
+
+où $\vect{n}_{\mathcal{F}}$ est la normale sortante fournie par l'enveloppe
+convexe.
+
+\subsection{Test d'appartenance}
+
+Un point $\vect{q} \in \mathcal{S}^2$ appartient au triangle sphérique
+$\mathcal{F} = (\vect{A}, \vect{B}, \vect{C})$ orienté CCW si et seulement si :
+
+\begin{equation}
+  (\vect{A} \cross \vect{B}) \cdot \vect{q} \geq 0, \quad
+  (\vect{B} \cross \vect{C}) \cdot \vect{q} \geq 0, \quad
+  (\vect{C} \cross \vect{A}) \cdot \vect{q} \geq 0
+\end{equation}
+
+\begin{proof}
+  $(\vect{A} \cross \vect{B}) \cdot \vect{q} = \det[\vect{A}, \vect{B}, \vect{q}]$
+  est le volume signé du tétraèdre $O\vect{A}\vect{B}\vect{q}$.
+  Il est positif si et seulement si $\vect{q}$ est du même côté de l'arête
+  $\vect{A}\vect{B}$ que le centroïde de la face, ce qui caractérise
+  l'intérieur du triangle sphérique.
+\end{proof}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Coordonnées Barycentriques Sphériques}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\subsection{Angle solide d'un triangle sphérique}
+
+\begin{definition}[Angle solide]
+  L'angle solide $\Omega(\vect{u}, \vect{v}, \vect{w})$ d'un triangle sphérique
+  de sommets $\vect{u}, \vect{v}, \vect{w} \in \mathcal{S}^2$ est la surface
+  qu'il subtend sur la sphère unité. Il est donné par la formule de
+  Van Oosterom et Strackee \cite{VanOosterom1983} :
+  \begin{equation}
+    \Omega(\vect{u}, \vect{v}, \vect{w}) = 2 \arctan\!\left(
+      \frac{\abs{\vect{u} \cdot (\vect{v} \cross \vect{w})}}
+           {1 + \vect{u} \cdot \vect{v} + \vect{u} \cdot \vect{w}
+              + \vect{v} \cdot \vect{w}}
+    \right)
+    \label{eq:solid_angle}
+  \end{equation}
+\end{definition}
+
+\begin{remarque}
+  La formule \eqref{eq:solid_angle} est numériquement stable pour tout triangle
+  non dégénéré sur $\mathcal{S}^2$, y compris les grands triangles et les
+  triangles proches des pôles, contrairement aux formulations basées sur
+  $\arccos$.
+\end{remarque}
+
+\subsection{Définition des poids barycentriques}
+
+\begin{definition}[Coordonnées barycentriques sphériques]
+  Pour un point $\vect{q} \in \mathcal{S}^2$ intérieur au triangle
+  $(\vect{A}, \vect{B}, \vect{C})$, les coordonnées barycentriques sphériques
+  $(\omega_A, \omega_B, \omega_C)$ sont définies par :
+  \begin{align}
+    \omega_A &= \frac{\Omega(\vect{q}, \vect{B}, \vect{C})}
+                     {\Omega(\vect{A}, \vect{B}, \vect{C})}, \\
+    \omega_B &= \frac{\Omega(\vect{A}, \vect{q}, \vect{C})}
+                     {\Omega(\vect{A}, \vect{B}, \vect{C})}, \\
+    \omega_C &= \frac{\Omega(\vect{A}, \vect{B}, \vect{q})}
+                     {\Omega(\vect{A}, \vect{B}, \vect{C})}.
+  \end{align}
+\end{definition}
+
+\begin{proposition}
+  Les coordonnées barycentriques sphériques vérifient :
+  \begin{equation}
+    \omega_A + \omega_B + \omega_C = 1, \qquad \omega_A, \omega_B, \omega_C \geq 0.
+  \end{equation}
+  De plus, $\omega_i \to 1$ lorsque $\vect{q} \to \vect{p}_i$ et
+  $\omega_j \to 0$ pour $j \neq i$.
+\end{proposition}
+
+\begin{proof}
+  Par additivité de l'angle solide : les trois sous-triangles
+  $(\vect{q},\vect{B},\vect{C})$, $(\vect{A},\vect{q},\vect{C})$,
+  $(\vect{A},\vect{B},\vect{q})$ partitionnent le triangle
+  $(\vect{A},\vect{B},\vect{C})$, donc leurs angles solides somment à
+  $\Omega(\vect{A},\vect{B},\vect{C})$, d'où $\omega_A + \omega_B + \omega_C = 1$.
+  La positivité découle du test d'appartenance.
+\end{proof}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Problème de l'Interpolation Complexe Directe}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\subsection{Équivalence domaine temporel / fréquentiel}
+
+L'interpolation la plus immédiate consiste à pondérer les spectres complexes :
+
+\begin{equation}
+  H_{\text{interp}}(k) = \omega_A H_A(k) + \omega_B H_B(k) + \omega_C H_C(k)
+  \label{eq:interp_complexe}
+\end{equation}
+
+Par linéarité de la transformée de Fourier discrète :
+
+\begin{equation}
+  \irfft\{H_{\text{interp}}\} = \omega_A h_A + \omega_B h_B + \omega_C h_C
+\end{equation}
+
+L'interpolation \eqref{eq:interp_complexe} est donc \textbf{strictement équivalente}
+à une moyenne pondérée dans le domaine temporel. Les deux opérations produisent
+exactement le même artefact.
+
+\subsection{Filtre en peigne induit}
+
+Considérons le cas simplifié de deux HRIRs modélisées comme des impulsions
+de Dirac retardées :
+
+\begin{equation}
+  h_A(t) \approx \delta(t - \tau_A), \qquad h_B(t) \approx \delta(t - \tau_B)
+\end{equation}
+
+Leurs transformées de Fourier sont :
+
+\begin{equation}
+  H_A(k) = e^{-j 2\pi k \tau_A / N}, \qquad H_B(k) = e^{-j 2\pi k \tau_B / N}
+\end{equation}
+
+La moyenne pondérée à $\omega_A = \omega_B = 1/2$ donne :
+
+\begin{align}
+  H_{\text{moy}}(k)
+    &= \frac{1}{2}\left(e^{-j2\pi k\tau_A/N} + e^{-j2\pi k\tau_B/N}\right) \\
+    &= e^{-j2\pi k\bar{\tau}/N} \cdot \cos\!\left(\frac{\pi k \Delta\tau}{N}\right)
+    \label{eq:comb}
+\end{align}
+
+où $\bar{\tau} = (\tau_A + \tau_B)/2$ est le retard moyen et
+$\Delta\tau = \tau_B - \tau_A$ l'écart temporel entre les deux HRIRs.
+
+\begin{proposition}[Filtre en peigne]
+  Le module du spectre résultant est :
+  \begin{equation}
+    \abs{H_{\text{moy}}(k)} = \abs{\cos\!\left(\frac{\pi k \Delta\tau}{N}\right)}
+  \end{equation}
+  Ce filtre en peigne présente des zéros aux fréquences :
+  \begin{equation}
+    f_n = \frac{(2n+1) f_s}{2\,\Delta\tau}, \qquad n \in \N
+  \end{equation}
+  Le premier zéro est à $f_0 = f_s / (2\,\Delta\tau)$.
+\end{proposition}
+
+\subsection{Analyse quantitative pour IRCAM LISTEN}
+
+Le retard interaural maximal est $\ITD_{\max} \approx r_{\text{tête}} / c
+\approx 0{,}09\,\text{m} / 343\,\text{m/s} \approx 0{,}26\,\text{ms}
+\approx 11$ échantillons à $f_s = 44\,100\,\text{Hz}$.
+
+\vspace{0.5em}
+\begin{center}
+\begin{tabular}{lcccc}
+  \toprule
+  Configuration & $\Delta\tau$ (éch.) & $f_0$ (Hz) & Audible ? \\
+  \midrule
+  Az. $5^\circ$, plan horizontal   & 1 & $22\,050$ & Non (Nyquist) \\
+  Az. $5^\circ$ + El. $15^\circ$   & 3 & $7\,350$  & Oui \\
+  Hors-axe (az. $\approx 45^\circ$) & 5 & $4\,410$  & Oui \\
+  \bottomrule
+\end{tabular}
+\end{center}
+\vspace{0.5em}
+
+Pour des trajectoires avec élévation variable ou des positions hors-axe,
+le filtre en peigne produit des annulations spectrales dans la bande
+$4\,\text{kHz}$--$11\,\text{kHz}$, pleinement audibles.
+
+\begin{remarque}
+  La profondeur du filtre en peigne dépend également de l'équilibre des
+  poids. Pour des poids $(\omega_A, \omega_B)$ quelconques :
+  $\min_k\abs{H(k)} = \abs{\omega_A - \omega_B}$. Le cas le plus défavorable
+  est $\omega_A = \omega_B = 1/2$ (point équidistant des deux sommets),
+  qui produit une annulation totale à $f_0$.
+\end{remarque}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Décomposition Phase-Minimum et Retard d'Onset}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\subsection{Décomposition canonique d'une HRIR}
+
+\begin{theoreme}[Décomposition phase-minimum / retard pur]
+  Toute réponse impulsionnelle causale $h \in \ell^2(\N)$ peut s'écrire de
+  manière unique comme la convolution d'une composante phase-minimum
+  $h_{\mathrm{mp}}$ et d'un retard pur de $\tau$ échantillons :
+  \begin{equation}
+    h(n) = h_{\mathrm{mp}}(n) * \delta(n - \tau)
+    \label{eq:decomposition}
+  \end{equation}
+  Dans le domaine fréquentiel :
+  \begin{equation}
+    H(k) = H_{\mathrm{mp}}(k) \cdot e^{-j2\pi k\tau/N}
+    \label{eq:decomposition_freq}
+  \end{equation}
+\end{theoreme}
+
+\begin{definition}[Signal phase-minimum]
+  Un signal $h_{\mathrm{mp}}$ est dit phase-minimum si tous ses pôles et
+  zéros sont à l'intérieur du cercle unité dans le plan $z$. De manière
+  équivalente, $h_{\mathrm{mp}}$ concentre son énergie au plus tôt dans le
+  temps : pour tout autre filtre $g$ vérifiant $\abs{G(\omega)} = \abs{H_{\mathrm{mp}}(\omega)}$,
+  on a :
+  \begin{equation}
+    \sum_{n=0}^{k} h_{\mathrm{mp}}^2(n) \geq \sum_{n=0}^{k} g^2(n), \qquad \forall k \geq 0
+  \end{equation}
+\end{definition}
+
+\begin{corollaire}
+  De \eqref{eq:decomposition_freq} et de $\abs{e^{-j2\pi k\tau/N}} = 1$, on
+  déduit que le retard pur n'affecte pas le module :
+  \begin{equation}
+    \boxed{\abs{H(k)} = \abs{H_{\mathrm{mp}}(k)}}
+    \label{eq:module_invariant}
+  \end{equation}
+  Le module du spectre HRIR est donc identique à celui de sa composante
+  phase-minimum, quelle que soit la valeur du retard $\tau$.
+\end{corollaire}
+
+La propriété \eqref{eq:module_invariant} est fondamentale : elle signifie que
+l'on peut calculer le spectre de magnitude à partir de la HRIR brute
+(avec son retard d'onset) et obtenir le même résultat que si l'on avait
+d'abord extrait la composante phase-minimum.
+
+\subsection{Détection du retard d'onset}
+
+Le retard d'onset $\tau_i^{e}$ ($e \in \{L, R\}$) de chaque HRIR est estimé
+comme la position du maximum d'amplitude :
+
+\begin{equation}
+  \tau_i^{e} = \argmax_{n} \abs{h_i^{e}(n)}
+  \label{eq:onset}
+\end{equation}
+
+Pour IRCAM LISTEN, $\tau$ varie typiquement entre 35 et 55 échantillons selon
+la position angulaire, reflétant la variation du temps de propagation jusqu'à
+chaque oreille.
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Reconstruction Phase-Minimum par la Méthode du Cepstre}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\subsection{Cepstre réel}
+
+\begin{definition}[Cepstre réel]
+  Le cepstre réel d'un signal $h$ est défini par :
+  \begin{equation}
+    c(n) = \mathrm{IDTFT}\left\{\log\abs{H(e^{j\omega})}\right\}
+    = \frac{1}{2\pi}\int_{-\pi}^{\pi} \log\abs{H(e^{j\omega})} \, e^{j\omega n} \,\mathrm{d}\omega
+  \end{equation}
+\end{definition}
+
+Le cepstre réel $c(n)$ est réel et pair. Pour un signal phase-minimum,
+$c(n) = 0$ pour $n < 0$ (cépstré causal). Pour un signal phase-maximum,
+$c(n) = 0$ pour $n > 0$. Un signal mixte a un cepstre non nul des deux côtés.
+
+\subsection{Fenêtrage phase-minimum}
+
+La composante phase-minimum $H_{\mathrm{mp}}$ est obtenue en annulant la partie
+anti-causale du cepstre et en doublant la partie causale :
+
+\begin{equation}
+  c_{\mathrm{mp}}(n) = w_{\mathrm{mp}}(n) \cdot c(n)
+  \label{eq:windowing}
+\end{equation}
+
+où la fenêtre phase-minimum est :
+
+\begin{equation}
+  w_{\mathrm{mp}}(n) =
+  \begin{cases}
+    1  & n = 0 \\
+    2  & 1 \leq n < N/2 \\
+    1  & n = N/2 \quad (\text{si } N \text{ pair}) \\
+    0  & n > N/2
+  \end{cases}
+  \label{eq:window}
+\end{equation}
+
+\begin{theoreme}[Reconstruction phase-minimum]
+  Le spectre complexe phase-minimum correspondant au module $M(k)$ est :
+  \begin{equation}
+    \boxed{
+    H_{\mathrm{mp}}(k) = \exp\!\left(\rfft\!\left\{w_{\mathrm{mp}} \cdot
+    \irfft\!\left\{\log(M + \varepsilon)\right\}\right\}\right)
+    }
+    \label{eq:reconstruction}
+  \end{equation}
+  où $\varepsilon > 0$ est un terme de régularisation évitant $\log(0)$.
+\end{theoreme}
+
+\begin{proof}[Justification]
+  La partie causale du cepstre réel encodes les zéros intérieurs au cercle
+  unité (phase-minimum) ; la partie anti-causale encode les zéros extérieurs
+  (phase-maximum). En annulant la partie anti-causale via \eqref{eq:windowing},
+  on force tous les zéros à l'intérieur du cercle unité, produisant le signal
+  phase-minimum de même module. L'exponentiation reconstitue le spectre
+  complexe depuis le log-spectre réel modifié.
+\end{proof}
+
+\subsection{Application d'un retard fractionnaire exact}
+
+Une fois la composante phase-minimum obtenue, le retard interpolé
+$\tau_{\mathrm{interp}} \in \R$ (potentiellement non entier) est appliqué
+\emph{exactement} dans le domaine fréquentiel :
+
+\begin{equation}
+  H_{\mathrm{final}}(k) = H_{\mathrm{mp}}(k) \cdot e^{-j2\pi k \,\tau_{\mathrm{interp}}/N}
+  \label{eq:delay_freq}
+\end{equation}
+
+\begin{remarque}
+  L'application du retard en \eqref{eq:delay_freq} est exacte pour tout
+  $\tau_{\mathrm{interp}} \in \R$, sans approximation : c'est l'équivalent
+  d'un filtre sinc parfait infini, appliqué sans troncature. En revanche,
+  un retard entier par décalage temporel $h(n) \mapsto h(n - \tau)$ introduit
+  une erreur de quantification quand $\tau \notin \N$.
+\end{remarque}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Méthode d'Interpolation Complète}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\subsection{Interpolation des modules}
+
+Pour le triangle $(\vect{A}, \vect{B}, \vect{C})$ encadrant la position cible
+$\vect{q}$, avec poids barycentriques $(\omega_A, \omega_B, \omega_C)$ et pour
+une oreille $e \in \{L, R\}$, le module interpolé est :
+
+\begin{equation}
+  M_{\mathrm{interp}}^e(k) = \omega_A \abs{H_A^e(k)} + \omega_B \abs{H_B^e(k)}
+  + \omega_C \abs{H_C^e(k)}
+  \label{eq:interp_magnitude}
+\end{equation}
+
+Puisque $M_{\mathrm{interp}}^e(k) > 0$ pour tout $k$ (somme pondérée de
+modules, jamais nulle), le spectre interpolé n'a \textbf{aucun zéro artificiel}.
+
+\subsection{Interpolation du retard d'onset}
+
+\begin{equation}
+  \tau_{\mathrm{interp}}^e = \omega_A \tau_A^e + \omega_B \tau_B^e
+  + \omega_C \tau_C^e
+  \label{eq:interp_delay}
+\end{equation}
+
+\subsection{Reconstruction de la HRIR interpolée}
+
+La HRIR interpolée est obtenue en trois étapes :
+
+\begin{enumerate}
+  \item Reconstruction phase-minimum depuis le module interpolé :
+  \begin{equation}
+    H_{\mathrm{mp,interp}}^e(k)
+      = \exp\!\left(\rfft\!\left\{w_{\mathrm{mp}} \cdot
+        \irfft\!\left\{\log(M_{\mathrm{interp}}^e + \varepsilon)\right\}
+        \right\}\right)
+    \label{eq:step1}
+  \end{equation}
+
+  \item Application du retard d'onset interpolé :
+  \begin{equation}
+    H_{\mathrm{final}}^e(k)
+      = H_{\mathrm{mp,interp}}^e(k)
+        \cdot \exp\!\!\left(-j\frac{2\pi k\,\tau_{\mathrm{interp}}^e}{N}\right)
+    \label{eq:step2}
+  \end{equation}
+
+  \item Transformation inverse :
+  \begin{equation}
+    h_{\mathrm{interp}}^e(n) = \mathrm{Re}\!\left\{\irfft\!\left\{
+      H_{\mathrm{final}}^e\right\}(n)\right\}
+    \label{eq:step3}
+  \end{equation}
+\end{enumerate}
+
+\subsection{Garantie d'absence de filtre en peigne}
+
+\begin{proposition}
+  La méthode d'interpolation définie par les équations
+  \eqref{eq:interp_magnitude}--\eqref{eq:step3} ne produit aucun filtre
+  en peigne.
+\end{proposition}
+
+\begin{proof}
+  À l'étape \eqref{eq:step1}, le module $M_{\mathrm{interp}}^e(k)$ est
+  strictement positif (somme pondérée de modules non nuls). Aucun zéro
+  spectral ne peut donc être introduit par l'interpolation des modules.
+  L'étape \eqref{eq:step2} multiplie par un terme de module unité
+  $|e^{-j\phi}| = 1$ : le module du spectre final est identiquement égal
+  à $M_{\mathrm{interp}}^e$, sans zéros additionnels.
+  Ainsi, $|H_{\mathrm{final}}^e(k)| = M_{\mathrm{interp}}^e(k) > 0$
+  pour tout $k$, ce qui exclut par définition tout filtre en peigne.
+\end{proof}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Algorithme Complet}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\subsection{Phase d'initialisation (une fois par dataset)}
+
+\begin{algorithm}[H]
+\caption{Initialisation de l'interpolateur HRTF}
+\begin{algorithmic}[1]
+\Require Dataset HRTF $\{(\varphi_i, \vartheta_i, h_i^L, h_i^R)\}_{i=1}^{M}$
+\State Convertir toutes les positions en vecteurs unitaires :
+  $\vect{p}_i \gets \vect{p}(\varphi_i, \vartheta_i) \in \mathcal{S}^2$
+\State Calculer l'enveloppe convexe $\mathcal{C} \gets \mathrm{ConvexHull}(\{\vect{p}_i\})$
+\State Orienter toutes les faces CCW (cf. Section~3.2)
+\For{$i = 1$ \textbf{to} $M$, $e \in \{L, R\}$}
+  \State $\tau_i^e \gets \argmax_n \abs{h_i^e(n)}$ \Comment{Retard d'onset}
+  \State $M_i^e(k) \gets \abs{\rfft\{h_i^e\}(k)}$ \Comment{Module précalculé}
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Phase de requête (par position cible)}
+
+\begin{algorithm}[H]
+\caption{Interpolation HRTF à la position $(\varphi_q, \vartheta_q)$}
+\begin{algorithmic}[1]
+\Require Position cible $(\varphi_q, \vartheta_q)$, interpolateur initialisé
+\State $\vect{q} \gets \vect{p}(\varphi_q, \vartheta_q)$
+\State Trouver le triangle $\mathcal{F} = (i_A, i_B, i_C)$ tel que
+  $\vect{q} \in \mathcal{F}$ (cf. Section~3.3)
+\State Calculer $(\omega_A, \omega_B, \omega_C)$ via l'équation~\eqref{eq:solid_angle}
+\For{$e \in \{L, R\}$}
+  \State $M_{\mathrm{interp}}^e \gets \omega_A M_{i_A}^e + \omega_B M_{i_B}^e
+    + \omega_C M_{i_C}^e$ \Comment{\eqref{eq:interp_magnitude}}
+  \State $\tau_{\mathrm{interp}}^e \gets \omega_A\tau_{i_A}^e + \omega_B\tau_{i_B}^e
+    + \omega_C\tau_{i_C}^e$ \Comment{\eqref{eq:interp_delay}}
+  \State $H_{\mathrm{mp}}^e \gets \exp\!\left(\rfft\!\left\{w_{\mathrm{mp}} \cdot
+    \irfft\!\left\{\log(M_{\mathrm{interp}}^e + \varepsilon)\right\}\right\}\right)$
+    \Comment{\eqref{eq:step1}}
+  \State $H_{\mathrm{final}}^e(k) \gets H_{\mathrm{mp}}^e(k) \cdot
+    e^{-j2\pi k\tau_{\mathrm{interp}}^e/N}$ \Comment{\eqref{eq:step2}}
+  \State $h_{\mathrm{interp}}^e \gets \mathrm{Re}\!\left\{
+    \irfft\!\left\{H_{\mathrm{final}}^e\right\}\right\}$ \Comment{\eqref{eq:step3}}
+\EndFor
+\State \Return $(h_{\mathrm{interp}}^L, h_{\mathrm{interp}}^R)$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Complexité}
+
+\begin{center}
+\begin{tabular}{lcc}
+  \toprule
+  Étape & Complexité & Exécution \\
+  \midrule
+  Enveloppe convexe          & $\mathcal{O}(M \log M)$ & Init \\
+  Précalcul modules et onset & $\mathcal{O}(MN\log N)$ & Init \\
+  Recherche triangle         & $\mathcal{O}(F)$ où $F \leq 2M$ faces & Requête \\
+  Poids barycentriques       & $\mathcal{O}(1)$ & Requête \\
+  Interpolation modules      & $\mathcal{O}(N)$ & Requête \\
+  Reconstruction min-phase   & $\mathcal{O}(N \log N)$ & Requête \\
+  Application retard         & $\mathcal{O}(N)$ & Requête \\
+  IFFT finale                & $\mathcal{O}(N \log N)$ & Requête \\
+  \midrule
+  \textbf{Total par requête} & $\mathcal{O}(N \log N)$ & \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+Pour $M = 187$, $N = 512$, $F = 370$ : l'initialisation est effectuée une
+seule fois, et chaque requête est dominée par deux FFT de taille $N$.
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Comparaison des Méthodes}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\begin{center}
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{lccc}
+  \toprule
+  & \textbf{Plus proche voisin} & \textbf{Interpolation complexe}
+  & \textbf{Magnitude + Onset} \\
+  \midrule
+  Trajectoires continues     & Paliers discrets & Transitions lisses & Transitions lisses \\
+  Filtre en peigne           & Aucun            & Oui ($f_0 \geq f_s/2\Delta\tau$) & \textbf{Aucun} \\
+  Positions arbitraires      & Non              & Oui                & Oui \\
+  Complexité (requête)       & $\mathcal{O}(M)$ & $\mathcal{O}(N\log N)$ & $\mathcal{O}(N\log N)$ \\
+  Fidélité spectrale         & Exacte (mesure)  & Approximée         & \textbf{Rigoureuse} \\
+  Retard interaural          & Discret          & Interpolé (implicite) & \textbf{Interpolé (exact)} \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Conclusion}
+% ═════════════════════════════════════════════════════════════════════════════
+
+Nous avons présenté une méthode d'interpolation HRTF rigoureuse fondée sur
+trois piliers mathématiques :
+\begin{enumerate}
+  \item La \textbf{triangulation de Delaunay sphérique} via enveloppe convexe,
+    fournissant une partition complète de la sphère en triangles optimaux.
+  \item Les \textbf{coordonnées barycentriques sphériques} calculées par
+    angles solides (formule de Van Oosterom--Strackee), garantissant une
+    interpolation continue et localement exacte sur les nœuds de mesure.
+  \item La \textbf{décomposition phase-minimum / retard d'onset}, permettant
+    d'interpoler séparément la coloration spectrale (via le cepstre réel) et
+    le retard interaural (via un déphasage linéaire exact), éliminant ainsi
+    tout filtre en peigne artificiel.
+\end{enumerate}
+
+La méthode est implémentée en Python avec une complexité par requête de
+$\mathcal{O}(N\log N)$ et une phase d'initialisation $\mathcal{O}(MN\log N)$
+effectuée une seule fois. Elle permet de positionner une source sonore en tout
+point continu de la sphère, y compris pour des trajectoires à élévation variable
+ou des positions hors-axe, sans artefacts spectraux audibles.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{thebibliography}{9}
+
+\bibitem{VanOosterom1983}
+A. Van Oosterom et J. Strackee,
+\textit{The Solid Angle of a Plane Triangle},
+IEEE Transactions on Biomedical Engineering,
+vol.~BME-30, no.~2, pp.~125--126, 1983.
+
+\bibitem{Blumlein1931}
+A. D. Blumlein,
+\textit{Improvements in and relating to Sound-transmission, Sound-recording and Sound-reproducing Systems},
+British Patent 394,325, 1933.
+
+\bibitem{Kistler1992}
+D. J. Kistler et F. L. Wightman,
+\textit{A model of head-related transfer functions based on principal components analysis and minimum-phase reconstruction},
+Journal of the Acoustical Society of America,
+vol.~91, no.~3, pp.~1637--1647, 1992.
+
+\bibitem{Carlile1995}
+S. Carlile (éd.),
+\textit{Virtual Auditory Space: Generation and Applications},
+Landes, Austin, TX, 1996.
+
+\bibitem{Ajdler2005}
+T. Ajdler, L. Sbaiz et M. Vetterli,
+\textit{The Plenacoustic Function and Its Sampling},
+IEEE Transactions on Signal Processing,
+vol.~54, no.~10, pp.~3790--3804, 2006.
+
+\bibitem{Noisternig2003}
+M. Noisternig, T. Musil, A. Sontacchi et R. Höldrich,
+\textit{3D binaural sound reproduction using a virtual ambisonic approach},
+Proc. IEEE VECIMS, pp.~174--178, 2003.
+
+\end{thebibliography}
+
+\end{document}

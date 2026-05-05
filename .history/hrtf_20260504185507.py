@@ -178,35 +178,23 @@ class HRTF:
             sr        = int(f.variables["Data.SamplingRate"][:].flat[0])
             metadata  = {attr: getattr(f, attr) for attr in f.ncattrs()}
 
-            # ── Étape 1 : ordre des oreilles (index 0 = gauche, index 1 = droite) ──
-            # ReceiverPosition stocké en Cartesian (x,y,z) : y > 0 = gauche.
+            # Canonicalise internal ear order to [left, right].
+            # Some SOFA files store receivers as [right, left] (as in IRC_1002).
             ear_order = ("left", "right")
             if "ReceiverPosition" in f.variables:
-                rp_var       = f.variables["ReceiverPosition"]
-                receiver_pos = np.asarray(rp_var[:]).squeeze()
+                receiver_pos = np.asarray(f.variables["ReceiverPosition"][:]).squeeze()
+                # Expected shape after squeeze: (R, C) where C>=2 and column 1 is y in Cartesian.
                 if receiver_pos.ndim == 2 and receiver_pos.shape[0] >= 2 and receiver_pos.shape[1] >= 2:
-                    y0, y1 = float(receiver_pos[0, 1]), float(receiver_pos[1, 1])
-                    if y0 < y1:          # receiver 0 est à droite (y < 0) → swap
-                        hrir  = hrir[:, [1, 0], :]
+                    y0 = float(receiver_pos[0, 1])
+                    y1 = float(receiver_pos[1, 1])
+                    # In SOFA Cartesian with y=left, y<0 is right ear and y>0 is left ear.
+                    if y0 < y1:
+                        # Input order is [right, left] -> swap to [left, right].
+                        hrir = hrir[:, [1, 0], :]
                         delay = delay[:, [1, 0]]
-
-            # ── Étape 2 : convention d'azimut ──────────────────────────────────
-            # SOFA standard : sens anti-horaire, 90° = gauche.
-            # Certains datasets (dont IRC_1002) utilisent la convention IAV :
-            # sens horaire, 90° = droite.
-            # Détection empirique : à az=90° dans le dataset, si l'oreille droite
-            # reçoit plus d'énergie que la gauche → convention CW → on inverse.
-            idx_test = int(np.argmin(np.abs(positions[:, 0] - 90.0)))
-            if np.abs(positions[idx_test, 0] - 90.0) < 30.0:
-                e_l = np.sum(hrir[idx_test, 0, :] ** 2)
-                e_r = np.sum(hrir[idx_test, 1, :] ** 2)
-                if e_r > e_l:
-                    # Convention CW détectée : convertir en CCW (SOFA standard)
-                    # az_sofa = (360 - az_iav) % 360
-                    positions = positions.copy()
-                    positions[:, 0] = (360.0 - positions[:, 0]) % 360.0
-                    print("[HRTF] Convention CW (90deg=droite) detectee -> "
-                          "azimuts convertis en CCW SOFA standard")
+                        ear_order = ("left", "right")
+                    else:
+                        ear_order = ("left", "right")
 
         return cls(
             hrir=hrir,
