@@ -58,15 +58,18 @@ class HRTFConvolver:
         self.elevation = elevation
         self.sample_rate = hrtf.sample_rate
 
-        # Sélection de la paire HRIR la plus proche
-        idx = hrtf.get_index(azimuth, elevation)
         self.hrir_left, self.hrir_right = hrtf.get_hrir(azimuth, elevation)
-        az_real = hrtf.positions[idx, 0]
-        el_real = hrtf.positions[idx, 1]
-        print(
-            f"[HRTFConvolver] Position sélectionnée : "
-            f"Az={az_real}°  El={el_real}°  (indice {idx})"
-        )
+        from HRTFInterpolator import HRTFInterpolator as _HI
+        if isinstance(hrtf, _HI):
+            print(f"[HRTFConvolver] HRIR interpolée pour Az={azimuth}°  El={elevation}°")
+        else:
+            idx = hrtf.get_index(azimuth, elevation)
+            az_real = hrtf.positions[idx, 0]
+            el_real = hrtf.positions[idx, 1]
+            print(
+                f"[HRTFConvolver] Position sélectionnée : "
+                f"Az={az_real}°  El={el_real}°  (indice {idx})"
+            )
 
         # Initialisés après load_signal() et run()
         self.source:       SoundSource | None = None

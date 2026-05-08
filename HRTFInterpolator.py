@@ -47,6 +47,12 @@ from scipy.spatial import ConvexHull
 from scipy.fft import rfft, irfft
 
 from hrtf import HRTF
+from hrtf_utils import (
+    build_mp_window,
+    detect_onset,
+    minimum_phase_from_magnitude,
+    reconstruct_hrir,
+)
 
 
 class HRTFInterpolator:
@@ -86,11 +92,7 @@ class HRTFInterpolator:
         self._magnitudes: np.ndarray = self._compute_magnitudes()
 
         # Fenêtre phase-minimum (réutilisée à chaque appel)
-        self._mp_window = np.zeros(N, dtype=np.float64)
-        self._mp_window[0]        = 1.0
-        self._mp_window[1:N // 2] = 2.0
-        if N % 2 == 0:
-            self._mp_window[N // 2] = 1.0
+        self._mp_window = build_mp_window(N)
 
         # Fréquences normalisées pour l'application du retard fractionnaire
         # rfftfreq(N)[k] = k/N  → phase = exp(−j2π·(k/N)·τ) = exp(−j2πkτ/N)
@@ -233,17 +235,14 @@ class HRTFInterpolator:
         """
         Précalcule le retard d'onset τ (en échantillons) pour chaque HRIR.
 
-        τ_i^e = argmax_n |h_i^e(n)|
-
+        Délègue à hrtf_utils.detect_onset.
         Retourne ndarray shape (M, 2), dtype float64.
-        La valeur est entière ici ; elle sera interpolée en valeur fractionnaire
-        lors de l'appel à _interp_channel.
         """
         M   = self.hrtf.n_positions
         out = np.zeros((M, 2), dtype=np.float64)
         for i in range(M):
             for ear in range(2):
-                out[i, ear] = float(np.argmax(np.abs(self.hrtf.hrir[i, ear, :])))
+                out[i, ear] = detect_onset(self.hrtf.hrir[i, ear, :])
         return out
 
     def _compute_magnitudes(self) -> np.ndarray:
@@ -344,34 +343,13 @@ class HRTFInterpolator:
 
     def _minimum_phase_from_magnitude(self, mag: np.ndarray) -> np.ndarray:
         """
-        Calcule le spectre complexe phase-minimum depuis un spectre de magnitude.
+        Spectre complexe phase-minimum depuis un spectre de magnitude.
 
-        Méthode du cepstre réel (Oppenheim & Schafer) :
-          1. log_mag = log(mag + ε)
-          2. c       = IRFFT(log_mag)           — cepstre réel, shape (N,)
-          3. c_mp    = c × w_mp                 — annule la partie anti-causale
-          4. H_mp    = exp(RFFT(c_mp))          — spectre complexe phase-minimum
-
-        Fenêtre w_mp :
-          w[0] = 1,  w[1:N/2] = 2,  w[N/2] = 1 (N pair),  w[N/2+1:] = 0
-
-        La propriété clé : |H_mp(f)| = mag(f) par construction,
-        et tous les zéros de H_mp sont à l'intérieur du cercle unité.
-
-        Paramètres
-        ----------
-        mag : ndarray shape (N//2+1,), dtype float64
-            Spectre de magnitude (valeurs positives).
-
-        Retourne
-        --------
-        ndarray complexe shape (N//2+1,)
+        Délègue à hrtf_utils.minimum_phase_from_magnitude.
         """
-        N       = self.hrtf.n_samples
-        log_mag = np.log(mag + 1e-30)                    # log du module
-        c       = irfft(log_mag, n=N)                    # cepstre réel
-        c_mp    = c * self._mp_window                    # fenêtrage phase-minimum
-        return np.exp(rfft(c_mp, n=N))                   # spectre complexe
+        return minimum_phase_from_magnitude(
+            mag, self.hrtf.n_samples, self._mp_window
+        )
 
     def _interp_channel(
         self,

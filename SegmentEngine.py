@@ -204,58 +204,46 @@ class SegmentEngine:
     # Crossfade entre deux sorties convoluées
     # ══════════════════════════════════════════════════════════════════════
 
-    def _crossfade_segments(
+    def _apply_input_fade(
         self,
-        out_i: np.ndarray,
-        out_j: np.ndarray,
+        seg_i: np.ndarray,
+        seg_j: np.ndarray,
         envelope: np.ndarray,
     ) -> None:
         """
-        Applique le crossfade entre la queue de out_i et la tête de out_j.
+        Applique le crossfade dans le domaine sec, AVANT convolution.
 
-        Formule dans la zone overlap :
-          out_i[k] ← (1 − t[k]) · out_i[k]   (fade-out)
-          out_j[k] ←       t[k] · out_j[k]   (fade-in)
+        Chaque échantillon de la zone de look-ahead reçoit des poids
+        complémentaires : fade_out dans seg_i, fade_in dans seg_j.
+        Après OLA, leur somme vaut 1 — énergie conservée sans filtre en peigne.
 
-        La somme lors de l'overlap-add donnera :
-          (1 − t) · out_i  +  t · out_j   ✓
+        Propriété clé : le résultat OLA est équivalent à une interpolation
+        implicite de la HRIR dans la zone de transition :
+          sortie[k] ≈ x[k] · (w_out · HRIR_i + w_in · HRIR_j)
 
-        Cette méthode modifie out_i et out_j EN PLACE.
-
-        Paramètres
-        ----------
-        out_i : np.ndarray
-            Sortie convoluée du segment i (mono). Modifiée en place.
-        out_j : np.ndarray
-            Sortie convoluée du segment j (mono). Modifiée en place.
-        envelope : np.ndarray, shape (overlap_samples,)
-            Enveloppe fade-in [0 → 1] retournée par _make_envelope().
+        Modifie seg_i et seg_j EN PLACE.
         """
-        N = len(envelope)
-        if N == 0:
+        O = len(envelope)
+        if O == 0:
             return
 
+        fade_in = envelope
         if self.crossfade_type == "equal_power":
-            # equal-power: fade_in^2 + fade_out^2 = 1
-            fade_out = np.sqrt(np.clip(1.0 - envelope ** 2, 0.0, 1.0))
+            fade_out = np.sqrt(np.clip(1.0 - fade_in ** 2, 0.0, 1.0)).astype(np.float32)
         else:
-            fade_out = 1.0 - envelope
-        fade_in  = envelope
+            fade_out = (1.0 - fade_in).astype(np.float32)
 
-        # ── Fade-out sur out_i — après la frontière du segment ───────────
-        #    Zone : [segment_samples, segment_samples + overlap_samples]
-        i_start  = self.segment_samples
-        i_end    = min(i_start + N, len(out_i))
-        actual_n = i_end - i_start
-        if actual_n > 0:
-            out_i[i_start:i_end] *= fade_out[:actual_n]
-            out_i[i_end:] = 0.0  # queue HRIR résiduelle au-delà du fade : coupée
+        S = self.segment_samples
 
-        # ── Fade-in sur out_j — au début du prochain segment ─────────────
-        #    Zone : [0, overlap_samples]
-        j_end = min(N, len(out_j))
-        if j_end > 0:
-            out_j[:j_end] *= fade_in[:j_end]
+        # ── Fade-out sur le look-ahead de seg_i ─────────────────────────
+        actual_o = min(O, len(seg_i) - S)
+        if actual_o > 0:
+            seg_i[S : S + actual_o] *= fade_out[:actual_o]
+
+        # ── Fade-in sur le début de seg_j ───────────────────────────────
+        actual_j = min(O, len(seg_j))
+        if actual_j > 0:
+            seg_j[:actual_j] *= fade_in[:actual_j]
 
     # ══════════════════════════════════════════════════════════════════════
     # Boucle principale
@@ -320,19 +308,18 @@ class SegmentEngine:
             f"crossfade='{self.crossfade_type}'"
         )
 
-        # — 2. Convolution de tous les segments ───────────────────────────
+        # — 2. Fenêtrage des entrées (crossfade dans le domaine sec) ──────
+        #    Chaque échantillon de la zone de recouvrement est pondéré une
+        #    seule fois, avant convolution → pas de filtre en peigne.
+        envelope = self._make_envelope(self.overlap_samples)
+        for i in range(n_segments - 1):
+            self._apply_input_fade(segments[i], segments[i + 1], envelope)
+
+        # — 3. Convolution de tous les segments ───────────────────────────
         conv_outs: list[list[np.ndarray]] = []
         for segment, (hrir_L, hrir_R) in zip(segments, hrirs_per_segment):
             cL, cR = self._convolve_segment(segment, hrir_L, hrir_R)
             conv_outs.append([cL, cR])
-
-        # — 3. Crossfade entre segments adjacents ─────────────────────────
-        envelope = self._make_envelope(self.overlap_samples)
-        for i in range(n_segments - 1):
-            cL_i, cR_i = conv_outs[i]
-            cL_j, cR_j = conv_outs[i + 1]
-            self._crossfade_segments(cL_i, cL_j, envelope)
-            self._crossfade_segments(cR_i, cR_j, envelope)
 
         # — 4. Overlap-add ────────────────────────────────────────────────
         out_len = len(signal) + hrir_len + self.overlap_samples
