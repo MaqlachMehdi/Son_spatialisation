@@ -1,2 +1,37 @@
+# Environnements virtuels
 .venv_spatial_son/
+.venv/
+venv/
+env/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+
+# Fichiers audio générés (produits par les notebooks)
+sound/generated/
+
+# Historique d'édition VSCode (développement local uniquement)
+.history/
+
+# Archives
 *.zip
+*.tar.gz
+
+# Jupyter
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# Éditeurs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

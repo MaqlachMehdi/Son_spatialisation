@@ -10,7 +10,12 @@ Le projet repose sur la base de données **IRCAM LISTEN**, développée à l'Ins
 
 ### Ce que contient ce dataset
 
-Le fichier `dataset/IRC_1002_C_44100.sofa` est une mesure de **Head-Related Transfer Functions (HRTFs)** du sujet 1002, version compacte, à 44 100 Hz.
+Le dossier `dataset/` contient des mesures de **Head-Related Transfer Functions (HRTFs)** de 6 sujets humains (version compacte, 44 100 Hz) ainsi qu'une HRTF générique calculée par moyenne :
+
+| Fichier | Description |
+|---|---|
+| `IRC_1002_C_44100.sofa` … `IRC_1057_C_44100.sofa` | 6 sujets IRCAM LISTEN individuels |
+| `generic.sofa` | HRTF générique — moyenne pondérée des 6 sujets (calculée par `HRTFGen`) |
 
 Une HRTF est la réponse en fréquence du trajet acoustique entre une source sonore et le tympan, pour une position donnée. Elle encode la façon dont la tête, les oreilles et le torse colorent le son selon la direction d'arrivée. En convolant un signal mono avec la paire gauche/droite correspondante à une position (az, el), on recrée la perception que la source vient de cette direction dans un casque.
 
@@ -47,15 +52,18 @@ Le dataset IRCAM utilise une convention **horaire** (CW : 90° = droite), diffé
 
 ```
 hrtf.py               ← Chargement et accès au dataset SOFA
-HRTFInterpolator.py   ← Interpolation barycentrique sphérique
+hrtf_utils.py         ← Fonctions pures partagées (phase minimum, onset, reconstruction)
+HRTFInterpolator.py   ← Interpolation barycentrique sphérique (positions hors grille)
+HRTFGen.py            ← HRTF générique par moyenne de N sujets SOFA
 Convolution.py        ← Convolution statique (source fixe)
 DistanceModel.py      ← Modèle de propagation en champ libre
 Soundsource.py        ← Dataclass source sonore positionnée
 Soundscape.py         ← Mix multi-source statique
 GenerateSound.py      ← Générateurs de signaux de test
-Trajectory.py         ← Trajectoires spatiales (circulaire, linéaire, libre)
-SegmentEngine.py      ← Convolution par blocs avec crossfade
-DynamicConvolver.py   ← Convolution dynamique (source en mouvement)
+Trajectory.py         ← Trajectoires spatiales (5 types)
+SegmentEngine.py      ← Convolution par blocs avec crossfade (windowing entrée)
+WOLAEngine.py         ← Convolution par blocs WOLA — reconstruction parfaite (Hann COLA)
+DynamicConvolver.py   ← Convolution dynamique (SegmentEngine ou WOLAEngine)
 DynamicSoundscape.py  ← Mix multi-source dynamique
 SoundVisu.py          ← Visualisations HRTF / ILD / ITD
 SpatialisationVerif.py← Vérification objective de la spatialisation
@@ -84,12 +92,51 @@ Pour les positions hors grille de mesure. Évite l'artefact de filtre en peigne 
 3. **Interpolation magnitude + onset séparés** :
    - Magnitude : `M_interp(f) = Σ ωᵢ · |Hᵢ(f)|` — pas d'annulation spectrale
    - Retard d'onset : `τ_interp = Σ ωᵢ · τᵢ` — délai fractionnaire interpolé
-   - Phase minimum synthétisée par transformée de Hilbert
+   - Phase minimum reconstruite par cepstre réel (Oppenheim & Schafer) via `hrtf_utils`
    - Retard exact appliqué en fréquentiel : `H_final = H_mp · exp(−j2πf·τ_interp)`
 
 **Drop-in replacement de `HRTF`** — même interface `get_hrir()`, utilisable partout sans modification.
 
-### 3. Convolution statique — `HRTFConvolver`
+### 3. Fonctions utilitaires partagées — `hrtf_utils`
+
+Module de fonctions pures utilisé par `HRTFInterpolator` et `HRTFGen` :
+
+| Fonction | Description |
+|---|---|
+| `build_mp_window(N)` | Fenêtre cepstrale pour la reconstruction phase-minimum |
+| `detect_onset(hrir)` | Retard d'onset τ = argmax \|h(n)\| |
+| `minimum_phase_from_magnitude(mag, N, w)` | Spectre complexe phase-min depuis un module |
+| `reconstruct_hrir(mag, τ, N, w, freqs)` | Pipeline complet magnitude + onset → HRIR |
+
+### 4. HRTF générique — `HRTFGen`
+
+Construit une HRTF représentative en moyennant N sujets SOFA. Résout le problème de la HRTF non-individualisée sans nécessiter de nouvelles mesures.
+
+**Algorithme (par position et par oreille) :**
+```
+M_avg(f) = Σᵢ wᵢ · |RFFT(hᵢ(f))|   — moyenne des modules (jamais d'annulation spectrale)
+τ_avg    = Σᵢ wᵢ · τᵢ               — onset moyen pondéré
+H_mp     = MinimumPhase(M_avg)        — reconstruction via cepstre réel
+H_final  = H_mp · exp(−j2πf·τ_avg)  — retard fractionnaire exact
+```
+
+Contrairement à la moyenne de spectres complexes (risque de filtre en peigne dû aux différences d'ITD inter-sujets), la moyenne des modules garantit M_avg > 0 — aucune annulation spectrale possible.
+
+**Usage :**
+```python
+# Calcul une seule fois (~30 s pour 6 sujets)
+gen = HRTFGen.from_directory("dataset/", pattern="IRC_*.sofa")
+gen.save("dataset/generic.sofa")
+
+# Utilisation rapide (rechargement instantané depuis le cache SOFA)
+gen    = HRTFGen.from_sofa("dataset/generic.sofa")
+interp = HRTFInterpolator(gen)   # interpolation sur la HRTF générique
+conv   = DynamicConvolver(hrtf=interp, ..., hop_ms=25.0)
+```
+
+**Drop-in replacement de `HRTF`** — même interface, compatible avec `HRTFInterpolator` et `DynamicConvolver`.
+
+### 5. Convolution statique — `HRTFConvolver`
 
 Convolution fréquentielle via `fftconvolve` (scipy). Accepte un signal depuis fichier WAV ou depuis un array numpy.
 
@@ -100,7 +147,7 @@ signal mono × HRIR_droite → canal droit
 
 Normalisation binaural conjointe (même facteur pour L et R, préserve l'équilibre interaural).
 
-### 4. Modèle de distance — `DistanceModel`
+### 6. Modèle de distance — `DistanceModel`
 
 Étend les HRTFs mesurées à r₀ = 2.06 m vers une distance cible r quelconque. Trois effets physiques :
 
@@ -112,48 +159,106 @@ Normalisation binaural conjointe (même facteur pour L et R, préserve l'équili
 
 Note : le son dans l'air est non-dispersif (pas d'étalement temporel fréquence-dépendant en champ libre).
 
-### 5. Paysage sonore statique — `Soundscape`
+### 7. Paysage sonore statique — `Soundscape`
 
 Combine N sources statiques spatialisées indépendamment puis mixées :
 - Convolution parallèle de chaque source
 - Zero-padding pour aligner les longueurs
 - Somme et normalisation conjointe
 
-### 6. Trajectoires — `Trajectory`
+### 8. Trajectoires — `Trajectory`
 
-Convertit un instant `t` (secondes) en position angulaire `(az°, el°)`. Trois types :
+Convertit un instant `t` (secondes) en position angulaire `(az°, el°)`. Cinq types :
 
 | Classe | Description |
 |---|---|
 | `CircularTrajectory` | Rotation à vitesse constante, élévation fixe |
+| `EllipseTrajectory` | Trajectoire elliptique avec demi-axes azimut et élévation configurables |
 | `LinearTrajectory` | Interpolation sphérique entre deux positions (SLERP) |
+| `RectilinearTrajectory` | Déplacement en ligne droite dans l'espace 3D (distance variable) |
 | `CustomTrajectory` | Points de passage libres avec interpolation cubique |
 
 Toutes les trajectoires exposent `plot()` (vue temporelle + vue polaire avec gradient de temps).
 
-### 7. Convolution dynamique — `DynamicConvolver` + `SegmentEngine`
+### 9. Convolution dynamique — `DynamicConvolver` + moteurs
 
-Pour les sources en mouvement. Approche **overlap-add par segments** :
+Pour les sources en mouvement. `DynamicConvolver` orchestre la trajectoire et délègue la convolution à l'un des deux moteurs :
 
-1. Découper le signal en blocs de `segment_ms` avec `overlap_ms` de recouvrement
-2. Évaluer la trajectoire au centre de chaque bloc
-3. Convoluer chaque bloc avec la HRIR correspondante
-4. **Crossfade** entre blocs adjacents dans la zone de recouvrement
+#### SegmentEngine — Overlap-Add avec fenêtrage d'entrée
 
-Trois types de fenêtre de crossfade : `linear`, `cosine`, `equal_power`.
+```python
+conv = DynamicConvolver(hrtf=hrtf, signal=signal, sr=sr, trajectory=traj,
+                         segment_ms=50.0, overlap_ms=15.0, crossfade_type="cosine")
+```
 
-**Règle pratique pour le choix de `segment_ms`** : pour une rotation complète en T secondes avec un pas angulaire HRTF de 15°, `segment_ms ≈ T / 24 × 1000` — un segment par position de grille.
+- Découpe le signal en blocs de `segment_ms` avec look-ahead de `overlap_ms`
+- **Fenêtrage sur l'entrée** (pas sur la sortie) : les mêmes échantillons reçoivent des poids complémentaires dans deux segments adjacents → équivalent à une interpolation implicite des HRIRs, sans filtre en peigne
+- Trois enveloppes disponibles : `linear`, `cosine`, `equal_power`
 
-### 8. Paysage sonore dynamique — `DynamicSoundscape`
+#### WOLAEngine — Weighted Overlap-Add (COLA Hann)
+
+```python
+conv = DynamicConvolver(hrtf=hrtf, signal=signal, sr=sr, trajectory=traj,
+                         hop_ms=25.0)
+```
+
+- Paramètre unique `hop_ms` (pas de choix d'enveloppe)
+- Fenêtre de Hann périodique (`sym=False`) : `w[n] + w[n + hop] = 1.0` exactement (**propriété COLA**)
+- Reconstruction parfaite garantie si la HRTF est stationnaire
+- Recommandé pour les rotations rapides ou les trajectoires avec fort changement d'ITD
+
+**Règle pour `hop_ms`** : `hop_ms = WOLAEngine.optimal_hop_ms(period_s, angular_resolution_deg=5)`.
+
+### 10. Paysage sonore dynamique — `DynamicSoundscape`
 
 N sources avec chacune leur propre trajectoire. Rendu indépendant puis mix normalisé.
 
-### 9. Vérification — `SpatialisationVerif`
+### 11. Vérification — `SpatialisationVerif`
 
 Vérifie objectivement la cohérence de la spatialisation :
 - **ILD** (Interaural Level Difference) en dB sur tous les azimuts
 - **ITD** (Interaural Time Delay) en millisecondes sur tous les azimuts
 - Comparaison avec le modèle théorique de Woodworth (tête sphérique)
+
+---
+
+## Exemples d'utilisation
+
+### Source fixe
+```python
+from hrtf import HRTF
+from Convolution import HRTFConvolver
+
+hrtf = HRTF.from_sofa("dataset/IRC_1002_C_44100.sofa")
+conv = HRTFConvolver(hrtf, azimuth=45.0, elevation=0.0)
+output = conv.convolve_file("signal.wav")
+```
+
+### Source en mouvement (WOLAEngine)
+```python
+from hrtf import HRTF
+from HRTFInterpolator import HRTFInterpolator
+from Trajectory import CircularTrajectory
+from DynamicConvolver import DynamicConvolver
+import soundfile as sf
+
+hrtf   = HRTF.from_sofa("dataset/generic.sofa")
+interp = HRTFInterpolator(hrtf)
+traj   = CircularTrajectory(duration_s=10.0, period_s=4.0, elevation=22.0)
+conv   = DynamicConvolver(hrtf=interp, signal=signal, sr=44100,
+                           trajectory=traj, hop_ms=25.0)
+output = conv.run()   # shape (N, 2)
+sf.write("output.wav", output, 44100)
+```
+
+### HRTF générique depuis plusieurs sujets
+```python
+from HRTFGen import HRTFGen
+
+gen = HRTFGen.from_directory("dataset/", pattern="IRC_*.sofa")
+gen.save("dataset/generic.sofa")
+gen.plot_comparison(other=hrtf_individual, azimuth=90.0, elevation=0.0)
+```
 
 ---
 
@@ -177,18 +282,27 @@ Tout le code utilise la **convention SOFA** :
 ```
 son_spatialisation/
 ├── dataset/
-│   └── IRC_1002_C_44100.sofa      # Base IRCAM LISTEN, sujet 1002
-├── sound/generated/               # Fichiers WAV exportés
+│   ├── IRC_1002_C_44100.sofa      # Sujet 1002 — IRCAM LISTEN
+│   ├── IRC_1003_C_44100.sofa      # Sujet 1003
+│   ├── IRC_1015_C_44100.sofa      # Sujet 1015
+│   ├── IRC_1042_C_44100.sofa      # Sujet 1042
+│   ├── IRC_1048_C_44100.sofa      # Sujet 1048
+│   ├── IRC_1057_C_44100.sofa      # Sujet 1057
+│   └── generic.sofa               # HRTF générique (moyenne des 6 sujets)
+├── sound/generated/               # Fichiers WAV exportés (non versionnés)
 ├── notebooks/
 │   ├── static HRTF Demo.ipynb     # Demo convolution statique
-│   ├── DynamicConvolver_viz.ipynb # Demo source en mouvement
+│   ├── DynamicConvolver_viz.ipynb # Demo source en mouvement + WOLAEngine
 │   ├── DynamicSoundscape_viz.ipynb# Demo paysage dynamique
+│   ├── HRTFGen.ipynb              # Demo HRTF générique multi-sujets
 │   ├── SegmentEngine_Viz.ipynb    # Visualisation du moteur de segments
 │   └── traj_viz.ipynb             # Visualisation des trajectoires
 ├── docs/
 │   └── hrtf_interpolation.tex     # Formalisation mathématique de l'interpolation
 ├── hrtf.py
+├── hrtf_utils.py
 ├── HRTFInterpolator.py
+├── HRTFGen.py
 ├── Convolution.py
 ├── DistanceModel.py
 ├── Soundsource.py
@@ -196,6 +310,7 @@ son_spatialisation/
 ├── GenerateSound.py
 ├── Trajectory.py
 ├── SegmentEngine.py
+├── WOLAEngine.py
 ├── DynamicConvolver.py
 ├── DynamicSoundscape.py
 ├── SoundVisu.py
@@ -211,9 +326,9 @@ son_spatialisation/
 | Package | Usage |
 |---|---|
 | `numpy` | Calcul numérique |
-| `scipy` | FFT, convolution, géométrie (ConvexHull) |
+| `scipy` | FFT, convolution, géométrie (ConvexHull), fenêtres WOLA |
 | `soundfile` | Lecture/écriture WAV |
-| `netCDF4` | Lecture fichiers SOFA |
+| `netCDF4` | Lecture/écriture fichiers SOFA |
 | `matplotlib` | Visualisations |
 | `librosa` | Rééchantillonnage |
 | `jupyter` | Notebooks interactifs |
@@ -227,6 +342,7 @@ pip install -r Requirements.txt
 ## Référence
 
 Base de données IRCAM LISTEN :
-> Algazi, V. R., Duda, R. O., Thompson, D. M., & Avendano, C. (2001). *The CIPIC HRTF Database*. Proceedings of the 2001 IEEE ASSP Workshop on Applications of Signal Processing to Audio and Acoustics.
+> UMR 9912 - STMS - IRCAM/CNRS/UPMC. *LISTEN HRTF Database* — Olivier Warusfel.
+> http://recherche.ircam.fr/equipes/salles/listen/
 
-> IRCAM LISTEN HRTF Database — http://recherche.ircam.fr/equipes/salles/listen/
+Licence IRCAM : utilisation libre à des fins éducatives, de recherche ou commerciales. Toute reproduction doit inclure la notice de copyright IRCAM.
