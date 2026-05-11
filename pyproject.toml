@@ -7,8 +7,7 @@ name = "son_spatialisation"
 version = "0.1.0"
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["*.py"]
+where = ["src"]
 
 [tool.setuptools.package-dir]
-"" = "."
+"" = "src"

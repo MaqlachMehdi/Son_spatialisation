@@ -46,8 +46,8 @@ import numpy as np
 from scipy.spatial import ConvexHull
 from scipy.fft import rfft, irfft
 
-from hrtf import HRTF
-from hrtf_utils import (
+from .hrtf import HRTF
+from .hrtf_utils import (
     build_mp_window,
     detect_onset,
     minimum_phase_from_magnitude,

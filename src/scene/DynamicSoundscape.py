@@ -22,8 +22,7 @@ import numpy as np
 import soundfile as sf
 
 from hrtf import HRTF
-from Trajectory import Trajectory
-from DynamicConvolver import DynamicConvolver
+from .Trajectory import Trajectory
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -197,6 +196,7 @@ class DynamicSoundscape:
                 f"\n[DynamicSoundscape] ── Source {i + 1}/{len(self._sources)} "
                 f"'{src.label}' ──"
             )
+            from engine import DynamicConvolver
             convolver = DynamicConvolver(
                 hrtf           = self.hrtf,
                 signal         = src.signal,

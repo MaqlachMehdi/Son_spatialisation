@@ -39,8 +39,8 @@ import numpy as np
 from netCDF4 import Dataset as NC4Dataset
 from scipy.fft import rfft
 
-from hrtf import HRTF
-from hrtf_utils import build_mp_window, detect_onset, reconstruct_hrir
+from .hrtf import HRTF
+from .hrtf_utils import build_mp_window, detect_onset, reconstruct_hrir
 
 
 class HRTFGen:

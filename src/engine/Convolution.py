@@ -19,8 +19,8 @@ import soundfile as sf
 from scipy.signal import fftconvolve
 
 from hrtf import HRTF
-from Soundsource import SoundSource
-from DistanceModel import DistanceModel
+from scene import SoundSource
+from scene import DistanceModel
 
 
 class HRTFConvolver:
@@ -59,7 +59,7 @@ class HRTFConvolver:
         self.sample_rate = hrtf.sample_rate
 
         self.hrir_left, self.hrir_right = hrtf.get_hrir(azimuth, elevation)
-        from HRTFInterpolator import HRTFInterpolator as _HI
+        from hrtf import HRTFInterpolator as _HI
         if isinstance(hrtf, _HI):
             print(f"[HRTFConvolver] HRIR interpolée pour Az={azimuth}°  El={elevation}°")
         else:

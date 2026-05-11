@@ -2,7 +2,7 @@ import numpy as np
 import soundfile as sf
 from pathlib import Path
 
-SAVE_DIR = Path(__file__).parent / "sound" / "generated"
+SAVE_DIR = Path(__file__).parents[2] / "sound" / "generated"
 
 _GAIN = 1 / np.sqrt(100_000)  # -50 dBFS, évite la saturation
 

@@ -14,7 +14,7 @@ import matplotlib.gridspec as gridspec
 from scipy.fft import rfft, rfftfreq
 from scipy.signal import spectrogram as scipy_spectrogram
 
-from Soundscape import Soundscape
+from scene import Soundscape
 
 
 class SoundVisu:

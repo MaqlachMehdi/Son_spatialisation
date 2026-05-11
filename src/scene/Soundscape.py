@@ -12,8 +12,7 @@ import numpy as np
 import soundfile as sf
 
 from hrtf import HRTF
-from Soundsource import SoundSource
-from Convolution import HRTFConvolver
+from .Soundsource import SoundSource
 
 
 class Soundscape:
@@ -77,6 +76,7 @@ class Soundscape:
 
         for i, source in enumerate(self.sources):
             print(f"\n[Soundscape] Traitement source {i + 1}/{len(self.sources)} — {source}")
+            from engine import HRTFConvolver
             convolver = HRTFConvolver.from_source(self.hrtf, source)
             convolver.run()
             lefts.append(convolver.output_left)

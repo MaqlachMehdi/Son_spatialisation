@@ -18,9 +18,9 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from SegmentEngine import SegmentEngine
+from .SegmentEngine import SegmentEngine
 from hrtf import HRTF
-from Trajectory import Trajectory
+from scene import Trajectory
 
 
 class DynamicConvolver:
@@ -91,7 +91,7 @@ class DynamicConvolver:
         self.signal = signal
 
         if hop_ms is not None:
-            from WOLAEngine import WOLAEngine
+            from .WOLAEngine import WOLAEngine
             hrir_probe = hrtf.get_hrir(0.0, 0.0)[0]
             self.engine = WOLAEngine(
                 sr       = self.sr,
@@ -179,7 +179,7 @@ class DynamicConvolver:
         hrirs     = self._fetch_hrirs(positions)
         gains     = self._compute_segment_gains()
 
-        from WOLAEngine import WOLAEngine
+        from .WOLAEngine import WOLAEngine
         if isinstance(self.engine, WOLAEngine):
             self.output = self.engine.render(self.signal, hrirs, gains_per_hop=gains)
         else:
@@ -207,7 +207,7 @@ class DynamicConvolver:
     def __repr__(self) -> str:
         done        = self.output is not None
         engine_name = type(self.engine).__name__
-        from WOLAEngine import WOLAEngine
+        from .WOLAEngine import WOLAEngine
         if isinstance(self.engine, WOLAEngine):
             params = f"hop={self.engine.hop_ms:.0f} ms"
         else:
