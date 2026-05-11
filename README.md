@@ -15,7 +15,7 @@ Le dossier `dataset/` contient des mesures de **Head-Related Transfer Functions 
 | Fichier | Description |
 |---|---|
 | `IRC_1002_C_44100.sofa` … `IRC_1057_C_44100.sofa` | 6 sujets IRCAM LISTEN individuels |
-| `generic.sofa` | HRTF générique — moyenne pondérée des 6 sujets (calculée par `HRTFGen`) |
+| `generic.sofa` | HRTF générique — moyenne pondérée des sujets (calculée par `HRTFGen`) ( téléchargé les autres pour une meilleur approximation) |
 
 Une HRTF est la réponse en fréquence du trajet acoustique entre une source sonore et le tympan, pour une position donnée. Elle encode la façon dont la tête, les oreilles et le torse colorent le son selon la direction d'arrivée. En convolant un signal mono avec la paire gauche/droite correspondante à une position (az, el), on recrée la perception que la source vient de cette direction dans un casque.
 
