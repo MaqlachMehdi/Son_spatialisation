@@ -1,0 +1,51 @@
+{
+    "fs": 48000,
+    "total_duration": 1361,
+    "instruments_time": {
+        "Bass": 820,
+        "Bassoon": 913,
+        "Cello": 956,
+        "Clarinet": 815,
+        "coranglais": 626,
+        "Flute": 726,
+        "Harp": 184,
+        "Horn": 715,
+        "Oboe": 718,
+        "Piccolo": 242,
+        "Timpani": 190,
+        "Trombone": 251,
+        "Trumpet": 176,
+        "Tuba": 297,
+        "Viola": 787,
+        "Violin_1": 881,
+        "Violin_2": 812,
+        "untunedpercussion": 112
+    },
+    "songs": {
+        "Tchaikovsky": {
+            "song_name": "Tchaikovsky",
+            "folder": "Tchaikovsky",
+            "duration": 1361,
+            "instruments_time": {
+                "Bass": 820,
+                "Bassoon": 913,
+                "Cello": 956,
+                "Clarinet": 815,
+                "coranglais": 626,
+                "Flute": 726,
+                "Harp": 184,
+                "Horn": 715,
+                "Oboe": 718,
+                "Piccolo": 242,
+                "Timpani": 190,
+                "Trombone": 251,
+                "Trumpet": 176,
+                "Tuba": 297,
+                "Viola": 787,
+                "Violin_1": 881,
+                "Violin_2": 812,
+                "untunedpercussion": 112
+            }
+        }
+    }
+}

@@ -15,6 +15,10 @@ __pycache__/
 # Fichiers audio générés (produits par les notebooks)
 sound/generated/
 
+# Base de données audio live (fichiers lourds, non versionnés)
+dataset_live/*.flac
+dataset_live/*.wav
+
 # Historique d'édition VSCode (développement local uniquement)
 .history/
 

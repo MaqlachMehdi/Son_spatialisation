@@ -1,0 +1,942 @@
+\documentclass[12pt, a4paper]{article}
+
+% ── Encodage & langue ─────────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+
+% ── Mathématiques ─────────────────────────────────────────────────────────────
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+\usepackage{bm}
+
+% ── Mise en page ──────────────────────────────────────────────────────────────
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{setspace}
+\usepackage{parskip}
+\usepackage{microtype}
+
+% ── Figures & tableaux ────────────────────────────────────────────────────────
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{float}
+
+% ── Algorithmes ───────────────────────────────────────────────────────────────
+\usepackage[ruled, vlined, linesnumbered]{algorithm2e}
+
+% ── Hyperliens ────────────────────────────────────────────────────────────────
+\usepackage[colorlinks=true, linkcolor=blue, citecolor=blue]{hyperref}
+
+% ── Environnements mathématiques ──────────────────────────────────────────────
+\theoremstyle{plain}
+\newtheorem{theorem}{Théorème}[section]
+\newtheorem{lemma}[theorem]{Lemme}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollaire}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Définition}
+\newtheorem{remark}[theorem]{Remarque}
+
+% ── Macros ────────────────────────────────────────────────────────────────────
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+\newcommand{\inner}[2]{\left\langle #1,\, #2 \right\rangle}
+\newcommand{\mat}[1]{\mathbf{#1}}
+\newcommand{\vect}[1]{\mathbf{#1}}
+\newcommand{\ones}{\mathbf{1}}
+\newcommand{\Gram}{\mat{G}}
+\newcommand{\Dsq}{\mat{D}^{\circ 2}}
+\newcommand{\Jmat}{\mat{J}}
+\newcommand{\tr}{\operatorname{tr}}
+
+% ── En-tête ───────────────────────────────────────────────────────────────────
+\title{
+    \Large\textbf{Localisation de Microphones par\\
+    Scaling Multidimensionnel et Trilatération}\\[0.5em]
+    \large Application à l'Enregistrement Orchestral Multicanal
+}
+\author{
+    Mehdi Maqlach\\[0.3em]
+    \small Projet de spatialisation audio binaurale
+}
+\date{\today}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\begin{document}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\maketitle
+\tableofcontents
+\newpage
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Introduction et formulation du problème}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Contexte}
+
+Dans le cadre d'un système de spatialisation binaurale d'enregistrements
+orchestraux, il est nécessaire de connaître la position tridimensionnelle de
+chaque source sonore pour calculer les filtres HRTF appropriés. Le jeu de
+données utilisé (TheOrchestra / TheSpheres, $f_s = 48\,000$ Hz) contient
+$M = 23$ microphones disposés dans une salle de concert.
+
+\subsection{Hypothèse de co-localisation}
+
+Pour chaque instrument $i \in \{1, \ldots, 17\}$, il existe un microphone dit
+\emph{dédié} $m^*_i$ placé en close-miking. On l'identifie par un critère
+combinant \textbf{précocité} (faible $s_{ij}$) et \textbf{intensité} (fort
+$a_{ij}$) :
+
+\begin{equation}
+    m^*_i \;=\; \underset{j \notin \{05\}}{\arg\min}\;\; \frac{s_{ij}}{a_{ij}}
+    \label{eq:dedicated_mic}
+\end{equation}
+
+où $s_{ij} \in \N$ est le numéro d'échantillon du maximum absolu de la RIR
+entre l'instrument $i$ et le microphone $j$, et $a_{ij} \in \R_{>0}$ est
+l'amplitude (valeur absolue) de ce maximum.
+
+\begin{remark}[Pourquoi le ratio $s_{ij}/a_{ij}$ et non $\arg\min\,s_{ij}$ seul]
+    L'inspection des données révèle qu'un microphone éloigné peut présenter un
+    échantillon $s_{ij}$ très faible (typiquement $s_{ij} \in \{1, 8, 10\}$)
+    avec une amplitude $a_{ij}$ infime ($\sim 10^{-3}$). Ces détections
+    précoces sont des artefacts de déclenchement ou des pré-échos du système
+    d'acquisition, sans rapport avec le trajet direct acoustique. Le critère
+    $\arg\min(s_{ij})$ seul serait alors trompé. Deux exemples illustratifs :
+
+    \begin{center}
+    \begin{tabular}{llccc}
+        \toprule
+        Instrument & Microphone & $s_{ij}$ & $a_{ij}$ & $s_{ij}/a_{ij}$ \\
+        \midrule
+        Basson & mic\textunderscore 18 (artefact) & 10 & 0{,}006 & 1724 \\
+        Basson & mic\textunderscore 15 (dédié réel) & 33 & 0{,}404 & \textbf{82} \\
+        \midrule
+        Clarinette & mic\textunderscore 17 (artefact) & 10 & 0{,}004 & 2703 \\
+        Clarinette & mic\textunderscore 14 (dédié réel) & 15 & 0{,}449 & \textbf{33} \\
+        \bottomrule
+    \end{tabular}
+    \end{center}
+
+    Le critère $\arg\min(s_{ij}/a_{ij})$ pénalise les artefacts précoces mais
+    faibles, et sélectionne le microphone qui est à la fois \emph{proche}
+    (latence faible) \emph{et} \emph{fort} (niveau élevé) — signature physique
+    sans ambiguïté d'un microphone de proximité.
+\end{remark}
+
+\textbf{Hypothèse fondamentale.} On suppose que l'instrument $i$ est
+positionné à la même position spatiale que son microphone dédié $m^*_i$.
+Cette hypothèse est justifiée par le close-miking : le vrai dédié présente
+systématiquement $s_{i,m^*_i} \approx 8$--$10$ échantillons \emph{et}
+$a_{i,m^*_i} \gtrsim 0{,}2$, soit une distance source--microphone de l'ordre de
+$5$--$7$ cm, négligeable devant les distances inter-microphones.
+
+\subsection{Modèle de distance par TOA}
+
+\subsubsection{Problème : maximum absolu \texorpdfstring{$\neq$}{≠} premier arrivé}
+
+Le jeu de données fournit, pour chaque paire (instrument $i$, microphone $j$),
+le numéro d'échantillon $s_{ij}$ du \textbf{maximum absolu} de la RIR, et non
+celui de la \emph{première arrivée} (trajet direct). Dans une salle de concert
+réverbérante, la RIR présente :
+
+\begin{enumerate}
+    \item le trajet direct, arrivant en premier mais souvent atténué par la distance,
+    \item des réflexions précoces, potentiellement plus énergétiques que le direct,
+    \item une queue de réverbération décroissante.
+\end{enumerate}
+
+Pour les paires de micros \emph{proches} (micro dédié co-localisé), le trajet
+direct domine : $s_{i,m^*_i}$ est bien le TOA direct. Pour les paires
+\emph{distantes}, une réflexion peut être le maximum de la RIR, donnant un
+$s_{ij}$ bien supérieur au TOA direct et donc une distance surestimée.
+
+\begin{remark}[Asymétrie révélatrice]
+    La symétrie physique impose $d(m^*_i, m^*_j) = d(m^*_j, m^*_i)$, soit
+    $s_{ij} \approx s_{ji}$.  Un écart important entre les deux mesures indique
+    qu'une des deux a capturé une réflexion tardive plutôt que le trajet direct.
+    Exemple dans les données :
+    \begin{center}
+    \begin{tabular}{lcc}
+        \toprule
+        Direction & $s$ (samples) & $d$ (m) \\
+        \midrule
+        Vln\textunderscore 1 $\to$ mic\textunderscore 18 (Trombones) & 2\,421 & 17{,}3 \\
+        Trombones $\to$ mic\textunderscore 06 (Vln\textunderscore 1) &   838  &  6{,}0 \\
+        \bottomrule
+    \end{tabular}
+    \end{center}
+    L'écart d'un facteur 3 pour la même distance physique révèle que
+    $s = 2\,421$ correspond à une réflexion murale tardive.
+\end{remark}
+
+\subsubsection{Correction : estimateur bidirectionnel}
+
+Le trajet direct étant le plus court, il est borné supérieurement par le
+minimum des deux mesures symétriques disponibles :
+
+\begin{equation}
+    d^{\rm direct}(m^*_i, m^*_j) \;\leq\;
+    \frac{\min(s_{ij},\, s_{ji})}{f_s} \cdot c
+    \;\leq\;
+    \frac{\max(s_{ij},\, s_{ji})}{f_s} \cdot c
+    \label{eq:toa_bounds}
+\end{equation}
+
+On adopte donc l'estimateur :
+
+\begin{equation}
+    \boxed{d_{ij} \;=\; \frac{\min(s_{ij},\, s_{ji})}{f_s} \cdot c}
+    \label{eq:toa_distance}
+\end{equation}
+
+où $c = 343\,\text{m/s}$ et $f_s = 48\,000\,\text{Hz}$.
+
+\begin{remark}[Propriété de symétrie]
+    L'estimateur~\eqref{eq:toa_distance} est automatiquement symétrique :
+    $d_{ij} = d_{ji}$.  La matrice $\mat{D}$ est donc symétrique par
+    construction, sans nécessiter de post-traitement $(D + D^\top)/2$.
+    Une asymétrie résiduelle nulle dans la matrice finale confirme que les
+    deux sens de mesure convergent vers le même trajet le plus court.
+\end{remark}
+
+\subsection{Structure de la matrice de distances disponible}
+
+Sous l'hypothèse de co-localisation, la mesure $d_{ij}$ est équivalente à la
+distance entre le microphone dédié $m^*_i$ et le microphone $j$. On dispose
+donc d'une matrice de distances $\mat{D} \in \R^{17 \times 23}$ dont la
+structure induite sur la matrice complète $23 \times 23$ est la suivante.
+
+On partitionne l'ensemble des 23 microphones en :
+\begin{itemize}
+    \item $\mathcal{D} = \{m^*_1, \ldots, m^*_{17}\}$ : les 17 microphones
+        dédiés (mic\textunderscore 06 à mic\textunderscore 22),
+    \item $\mathcal{A} = \{\text{mic\textunderscore 00}, \ldots,
+        \text{mic\textunderscore 04}\}$ : les 5 microphones d'ambiance dont
+        la distance à tout autre microphone d'ambiance est inconnue.
+\end{itemize}
+
+\begin{remark}
+    Le microphone mic\textunderscore 05 présente des valeurs $s_{i,05}$
+    anormalement élevées (entre 6\,387 et 30\,145 échantillons, soit des
+    distances apparentes de 45 à 215 m physiquement impossibles dans une salle
+    de concert). Ce microphone est exclu des calculs : il s'agit probablement
+    d'une voie de réverbération artificielle ou d'un écho tardif.
+\end{remark}
+
+La matrice de distances complète $23 \times 23$ possède donc la structure
+suivante, après symétrie par hypothèse de co-localisation :
+
+\begin{equation}
+    \mat{\Delta} \;=\; \begin{pmatrix}
+        \mat{\Delta}_{\mathcal{DD}} & \mat{\Delta}_{\mathcal{DA}} \\[4pt]
+        \mat{\Delta}_{\mathcal{AD}} & \mat{\Delta}_{\mathcal{AA}}
+    \end{pmatrix}
+\end{equation}
+
+où $\mat{\Delta}_{\mathcal{DD}} \in \R^{17\times 17}$ et
+$\mat{\Delta}_{\mathcal{DA}} \in \R^{17\times 5}$ sont \emph{connus}, mais
+$\mat{\Delta}_{\mathcal{AA}} \in \R^{5\times 5}$ est \emph{inconnu} (aucun
+instrument n'est co-localisé avec un microphone d'ambiance).
+
+\medskip
+Cette structure dicte une résolution en deux phases indépendantes :
+
+\begin{enumerate}
+    \item \textbf{Phase 1.} Retrouver les positions $\{\vect{x}_i\}_{i \in
+        \mathcal{D}}$ des 17 microphones dédiés à partir de
+        $\mat{\Delta}_{\mathcal{DD}}$ par \emph{Classical Multidimensional
+        Scaling} (cMDS).
+    \item \textbf{Phase 2.} Retrouver les positions $\{\vect{x}_k\}_{k \in
+        \mathcal{A}}$ des 5 microphones d'ambiance à partir de
+        $\mat{\Delta}_{\mathcal{AD}}$ par \emph{trilatération linéarisée}.
+\end{enumerate}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Phase 1 : Classical MDS sur les microphones dédiés}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Objectif}
+
+On dispose de la matrice de distances $\mat{\Delta}_{\mathcal{DD}} \in
+\R^{17\times 17}$ symétrique à diagonale nulle. On cherche une configuration
+$\mat{X} \in \R^{17 \times 3}$ dont les lignes sont les coordonnées
+cartésiennes $\vect{x}_1, \ldots, \vect{x}_{17} \in \R^3$ telles que :
+
+\begin{equation}
+    \norm{\vect{x}_i - \vect{x}_j} \;=\; (\mat{\Delta}_{\mathcal{DD}})_{ij}
+    \qquad \forall\, i, j \in \{1,\ldots,17\}
+\end{equation}
+
+\subsection{Pourquoi élever les distances au carré}
+
+La distance euclidienne $d_{ij} = \norm{\vect{x}_i - \vect{x}_j}$ n'est pas
+linéaire en les coordonnées. Son carré, en revanche, se décompose algébriquement :
+
+\begin{align}
+    d_{ij}^2 &= \norm{\vect{x}_i - \vect{x}_j}^2
+    = (\vect{x}_i - \vect{x}_j)^\top (\vect{x}_i - \vect{x}_j) \notag \\
+    &= \vect{x}_i^\top\vect{x}_i
+       - 2\,\vect{x}_i^\top\vect{x}_j
+       + \vect{x}_j^\top\vect{x}_j \notag \\
+    &= \norm{\vect{x}_i}^2
+       - 2\inner{\vect{x}_i}{\vect{x}_j}
+       + \norm{\vect{x}_j}^2
+    \label{eq:dist_squared}
+\end{align}
+
+Ce développement fait apparaître le \textbf{produit scalaire}
+$\inner{\vect{x}_i}{\vect{x}_j}$, qui est une quantité \emph{bilinéaire} en
+les coordonnées. C'est cette propriété que le MDS classique exploite : on
+manipule une expression linéaire en les inconnues, ce qui est impossible avec
+$d_{ij}$ directement.
+
+\subsection{La matrice de Gram}
+
+\begin{definition}[Matrice de Gram]
+    Étant donné un ensemble de vecteurs $\vect{x}_1, \ldots, \vect{x}_n \in
+    \R^d$, la matrice de Gram associée est :
+    \begin{equation}
+        \Gram \;=\; \mat{X}\mat{X}^\top \;\in\; \R^{n \times n},
+        \qquad \Gram_{ij} = \inner{\vect{x}_i}{\vect{x}_j}
+    \end{equation}
+    où $\mat{X} \in \R^{n \times d}$ est la matrice dont les lignes sont les
+    $\vect{x}_i$.
+\end{definition}
+
+L'objectif du MDS est de récupérer $\mat{X}$ (à une rotation près) à partir
+de $\mat{G}$. L'équation~\eqref{eq:dist_squared} s'écrit alors sous forme
+matricielle. En posant $r_i = \norm{\vect{x}_i}^2$ :
+
+\begin{equation}
+    \Dsq_{ij} \;=\; r_i + r_j - 2\,\Gram_{ij}
+    \label{eq:gram_dist}
+\end{equation}
+
+ou, en notation matricielle :
+
+\begin{equation}
+    \Dsq \;=\; \vect{r}\ones^\top + \ones\vect{r}^\top - 2\Gram
+    \label{eq:gram_dist_matrix}
+\end{equation}
+
+où $\vect{r} = (r_1, \ldots, r_n)^\top \in \R^n$ et $\ones = (1,\ldots,1)^\top
+\in \R^n$.
+
+\subsection{La matrice de centrage \texorpdfstring{$\Jmat$}{J}}
+
+\begin{definition}[Matrice de centrage]
+    Pour $n \in \N^*$, la matrice de centrage est :
+    \begin{equation}
+        \Jmat \;=\; \mat{I}_n - \frac{1}{n}\,\ones\ones^\top \;\in\; \R^{n\times n}
+    \end{equation}
+    où $\mat{I}_n$ est la matrice identité $n\times n$.
+\end{definition}
+
+\begin{proposition}[Propriétés de $\Jmat$]\label{prop:J}
+    La matrice $\Jmat$ vérifie :
+    \begin{enumerate}
+        \item[\rm(i)] $\Jmat\ones = \vect{0}$
+        \item[\rm(ii)] $\ones^\top\Jmat = \vect{0}^\top$
+        \item[\rm(iii)] $\Jmat$ est symétrique : $\Jmat^\top = \Jmat$
+        \item[\rm(iv)] $\Jmat$ est idempotente : $\Jmat^2 = \Jmat$
+    \end{enumerate}
+\end{proposition}
+
+\begin{proof}
+    \textbf{(i)} Par définition :
+    \begin{align}
+        \Jmat\ones
+        &= \left(\mat{I}_n - \frac{1}{n}\,\ones\ones^\top\right)\ones \notag\\
+        &= \mat{I}_n\ones - \frac{1}{n}\,\ones\,(\ones^\top\ones) \notag\\
+        &= \ones - \frac{1}{n}\,\ones\cdot n
+        \qquad\left[\text{car } \ones^\top\ones
+            = \sum_{k=1}^n 1 = n\right]\notag\\
+        &= \ones - \ones \;=\; \vect{0}
+    \end{align}
+
+    \textbf{(ii)} Découle de (i) par transposition : $\ones^\top\Jmat =
+    (\Jmat^\top\ones)^\top = (\Jmat\ones)^\top = \vect{0}^\top$, en utilisant
+    (iii).
+
+    \textbf{(iii)} $\Jmat^\top = \mat{I}_n^\top - \frac{1}{n}(\ones\ones^\top)^\top
+    = \mat{I}_n - \frac{1}{n}\ones\ones^\top = \Jmat$.
+
+    \textbf{(iv)}
+    $\Jmat^2 = \left(\mat{I} - \frac{1}{n}\ones\ones^\top\right)^2
+    = \mat{I} - \frac{2}{n}\ones\ones^\top
+    + \frac{1}{n^2}\ones(\ones^\top\ones)\ones^\top
+    = \mat{I} - \frac{2}{n}\ones\ones^\top + \frac{1}{n}\ones\ones^\top
+    = \mat{I} - \frac{1}{n}\ones\ones^\top = \Jmat$.
+\end{proof}
+
+\begin{remark}
+    Appliqué à un vecteur $\vect{v} \in \R^n$, $\Jmat$ soustrait la moyenne :
+    $(\Jmat\vect{v})_i = v_i - \bar{v}$ où $\bar{v} = \frac{1}{n}\sum_k v_k$.
+    Appliqué à une matrice $\mat{M}$ sous la forme $\Jmat\mat{M}\Jmat$, il
+    soustrait simultanément les moyennes de lignes et de colonnes et rajoute
+    la moyenne globale : c'est le \textbf{double centrage}.
+\end{remark}
+
+\subsection{Théorème du double centrage}
+
+\begin{theorem}[Double centrage]\label{thm:double_centering}
+    Soit $\mat{X} \in \R^{n\times d}$ une configuration de points vérifiant
+    $\sum_{i=1}^n \vect{x}_i = \vect{0}$ (centrage de la configuration).
+    Soit $\Dsq \in \R^{n\times n}$ la matrice des distances euclidiennes au
+    carré associée. Alors :
+    \begin{equation}
+        \boxed{-\frac{1}{2}\,\Jmat\Dsq\Jmat \;=\; \Gram \;=\; \mat{X}\mat{X}^\top}
+    \end{equation}
+\end{theorem}
+
+\begin{proof}
+    On part de la décomposition~\eqref{eq:gram_dist_matrix} :
+    \[
+        \Dsq = \vect{r}\ones^\top + \ones\vect{r}^\top - 2\Gram
+    \]
+
+    On calcule $-\frac{1}{2}\Jmat\Dsq\Jmat$ en distribuant :
+
+    \begin{equation}
+        -\frac{1}{2}\Jmat\Dsq\Jmat
+        = -\frac{1}{2}\Jmat\!\left(\vect{r}\ones^\top\right)\!\Jmat
+        -\frac{1}{2}\Jmat\!\left(\ones\vect{r}^\top\right)\!\Jmat
+        + \Jmat\Gram\Jmat
+        \label{eq:expand}
+    \end{equation}
+
+    \textbf{Annulation du premier terme.}
+    En utilisant la propriété (ii) de la Proposition~\ref{prop:J},
+    $\ones^\top\Jmat = \vect{0}^\top$, donc :
+    \[
+        \Jmat\!\left(\vect{r}\ones^\top\right)\!\Jmat
+        = \Jmat\vect{r}\,\underbrace{(\ones^\top\Jmat)}_{=\,\vect{0}^\top}
+        = \mat{0}
+    \]
+
+    \textbf{Annulation du second terme.}
+    En utilisant la propriété (i), $\Jmat\ones = \vect{0}$, donc :
+    \[
+        \Jmat\!\left(\ones\vect{r}^\top\right)\!\Jmat
+        = \underbrace{(\Jmat\ones)}_{=\,\vect{0}}\vect{r}^\top\Jmat
+        = \mat{0}
+    \]
+
+    \textbf{Simplification du troisième terme.}
+    On doit montrer que $\Jmat\Gram\Jmat = \Gram$. L'hypothèse de centrage
+    $\sum_i \vect{x}_i = \vect{0}$ implique :
+    \[
+        (\mat{X}^\top\ones)_k = \sum_{i=1}^n x_{ik} = 0
+        \quad\Longrightarrow\quad
+        \mat{X}^\top\ones = \vect{0}
+    \]
+
+    Alors :
+    \[
+        \Gram\ones = \mat{X}\mat{X}^\top\ones = \mat{X}\,(\mat{X}^\top\ones)
+        = \mat{X}\cdot\vect{0} = \vect{0}
+    \]
+    et par transposition $\ones^\top\Gram = \vect{0}^\top$. Ainsi :
+    \begin{align}
+        \Jmat\Gram\Jmat
+        &= \left(\mat{I} - \frac{1}{n}\ones\ones^\top\right)\Gram
+           \left(\mat{I} - \frac{1}{n}\ones\ones^\top\right) \notag\\
+        &= \Gram
+           - \frac{1}{n}\ones\underbrace{(\ones^\top\Gram)}_{=\,\vect{0}^\top}
+           - \frac{1}{n}\underbrace{(\Gram\ones)}_{=\,\vect{0}}\ones^\top
+           + \frac{1}{n^2}\ones\underbrace{(\ones^\top\Gram\ones)}_{=\,0}\ones^\top
+        \notag\\
+        &= \Gram
+    \end{align}
+
+    \textbf{Conclusion.} En reportant dans~\eqref{eq:expand} :
+    \[
+        -\frac{1}{2}\Jmat\Dsq\Jmat = 0 + 0 + \Gram = \Gram \qedhere
+    \]
+\end{proof}
+
+\begin{remark}
+    L'hypothèse $\sum_i \vect{x}_i = \vect{0}$ n'est pas restrictive : on
+    peut toujours centrer une configuration en lui soustrayant son centroïde.
+    Le double centrage de $\Dsq$ est exactement l'opération qui impose ce
+    centrage implicitement. C'est pourquoi l'algorithme MDS n'a pas besoin
+    d'imposer ce centrage a priori : il est automatiquement réalisé.
+\end{remark}
+
+\subsection{Récupération des coordonnées par décomposition propre}
+
+\subsubsection{Propriétés de la matrice de Gram}
+
+\begin{proposition}\label{prop:gram_psd}
+    La matrice de Gram $\Gram = \mat{X}\mat{X}^\top$ est symétrique
+    semi-définie positive (SSDP).
+\end{proposition}
+
+\begin{proof}
+    \textbf{Symétrie :} $\Gram^\top = (\mat{X}\mat{X}^\top)^\top =
+    \mat{X}\mat{X}^\top = \Gram$.
+
+    \textbf{Semi-définie positive :} Pour tout $\vect{v} \in \R^n$ :
+    \[
+        \vect{v}^\top\Gram\vect{v}
+        = \vect{v}^\top\mat{X}\mat{X}^\top\vect{v}
+        = (\mat{X}^\top\vect{v})^\top(\mat{X}^\top\vect{v})
+        = \norm{\mat{X}^\top\vect{v}}^2 \;\geq\; 0
+    \]
+\end{proof}
+
+\subsubsection{Décomposition spectrale}
+
+Le théorème spectral garantit que toute matrice symétrique réelle se
+diagonalise dans une base orthonormée :
+
+\begin{theorem}[Décomposition spectrale]\label{thm:spectral}
+    Soit $\Gram \in \R^{n\times n}$ symétrique SSDP. Il existe une matrice
+    orthogonale $\mat{V} \in \R^{n\times n}$ (i.e.\ $\mat{V}^\top\mat{V} =
+    \mat{I}$) et une matrice diagonale $\mat{\Lambda} =
+    \operatorname{diag}(\lambda_1, \ldots, \lambda_n)$ avec $\lambda_1 \geq
+    \lambda_2 \geq \cdots \geq \lambda_n \geq 0$ telles que :
+    \begin{equation}
+        \Gram \;=\; \mat{V}\mat{\Lambda}\mat{V}^\top
+    \end{equation}
+    Les colonnes $\vect{v}_k$ de $\mat{V}$ sont les \textbf{vecteurs propres}
+    de $\Gram$ et les $\lambda_k$ sont les \textbf{valeurs propres} associées,
+    vérifiant $\Gram\vect{v}_k = \lambda_k\vect{v}_k$.
+\end{theorem}
+
+\subsubsection{Factorisation en racine de Gram}
+
+On cherche $\mat{X} \in \R^{n\times 3}$ tel que $\mat{X}\mat{X}^\top = \Gram$.
+En utilisant la décomposition spectrale :
+
+\begin{align}
+    \Gram &= \mat{V}\mat{\Lambda}\mat{V}^\top \notag\\
+    &= \mat{V}\mat{\Lambda}^{1/2}\mat{\Lambda}^{1/2}\mat{V}^\top \notag\\
+    &= \left(\mat{V}\mat{\Lambda}^{1/2}\right)
+       \left(\mat{V}\mat{\Lambda}^{1/2}\right)^\top
+\end{align}
+
+où $\mat{\Lambda}^{1/2} = \operatorname{diag}(\sqrt{\lambda_1}, \ldots,
+\sqrt{\lambda_n})$ est bien définie puisque $\lambda_k \geq 0$.
+
+\begin{definition}[Solution MDS]
+    En ne retenant que les 3 premières valeurs propres (correspondant à la
+    dimension physique de l'espace), la solution MDS est :
+    \begin{equation}
+        \boxed{\mat{X} = \mat{V}_3\,\mat{\Lambda}_3^{1/2}}
+    \end{equation}
+    où $\mat{V}_3 \in \R^{n\times 3}$ contient les 3 premiers vecteurs propres
+    et $\mat{\Lambda}_3 = \operatorname{diag}(\lambda_1, \lambda_2, \lambda_3)$.
+\end{definition}
+
+\begin{proposition}[Interprétation des valeurs propres]\label{prop:eigenvalues}
+    Pour une configuration de points exactement en dimension 3, la matrice de
+    Gram a exactement 3 valeurs propres non nulles : $\lambda_1 \geq \lambda_2
+    \geq \lambda_3 > 0$ et $\lambda_4 = \cdots = \lambda_{17} = 0$.
+    En présence de bruit de mesure, on observe $\lambda_4, \ldots,
+    \lambda_{17} \approx 0 \ll \lambda_3$.
+\end{proposition}
+
+\begin{remark}[Signification physique des valeurs propres]
+    La formule de reconstruction $\mat{X} = \mat{V}_3\mat{\Lambda}_3^{1/2}$
+    implique que la $k$-ième colonne de $\mat{X}$ vaut $\sqrt{\lambda_k}\,\vect{v}_k$.
+    Or cette colonne contient les coordonnées de tous les $n$ microphones sur
+    le $k$-ième axe principal. On a donc directement :
+    \[
+        \lambda_k
+        = \bigl\lVert \operatorname{col}_k(\mat{X}) \bigr\rVert^2
+        = \bigl\lVert \sqrt{\lambda_k}\,\vect{v}_k \bigr\rVert^2
+        = \lambda_k \underbrace{\norm{\vect{v}_k}^2}_{=\,1}
+        = \sum_{i=1}^{n} x_{ik}^2
+    \]
+    $\lambda_k$ est donc la \textbf{somme des carrés des coordonnées} de tous
+    les microphones sur l'axe $k$ — et non une distance directe. Puisque la
+    configuration est centrée ($\sum_i x_{ik} = 0$), $\lambda_k/n$ est la
+    \emph{variance} sur cet axe, et la distance typique d'un microphone au
+    centre vaut :
+    \[
+        \sigma_k = \sqrt{\lambda_k / n} \quad [\text{mètres}]
+    \]
+    En acoustique de salle, on s'attend typiquement à
+    $\lambda_1 \gg \lambda_2 > \lambda_3 \gg 0$,
+    correspondant respectivement à la profondeur, la largeur et la hauteur de
+    la scène : les microphones sont davantage étalés en profondeur qu'en
+    hauteur.
+\end{remark}
+
+\subsubsection{Ambiguïté de rotation}
+
+\begin{proposition}[Non-unicité de la solution]\label{prop:rotation_ambiguity}
+    Si $\mat{X}$ est solution du problème MDS, alors pour toute matrice
+    orthogonale $\mat{R} \in \R^{3\times 3}$ (rotation ou réflexion), la
+    configuration $\mat{X}' = \mat{X}\mat{R}$ est également solution.
+\end{proposition}
+
+\begin{proof}
+    Il suffit de vérifier que $\mat{X}'$ reproduit la même matrice de Gram :
+    \[
+        \mat{X}'\mat{X}'^\top
+        = (\mat{X}\mat{R})(\mat{X}\mat{R})^\top
+        = \mat{X}\mat{R}\mat{R}^\top\mat{X}^\top
+        = \mat{X}\,\mat{I}_3\,\mat{X}^\top
+        = \mat{X}\mat{X}^\top = \Gram
+    \]
+    La propriété $\mat{R}\mat{R}^\top = \mat{I}_3$ (orthogonalité) assure
+    l'égalité.
+\end{proof}
+
+En conséquence, MDS fournit des positions correctes à une \emph{isométrie}
+(rotation, réflexion, translation) près. L'algorithme de Kabsch
+(Section~\ref{sec:kabsch}) est nécessaire pour aligner la solution dans le
+repère physique de la salle de concert.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Phase 2 : Trilatération des microphones d'ambiance}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Formulation du problème}
+
+Après la Phase 1, les positions $\vect{x}_1, \ldots, \vect{x}_{17} \in \R^3$
+des microphones dédiés sont connues. Pour chaque microphone d'ambiance $k \in
+\mathcal{A}$, on dispose de ses distances à tous les microphones dédiés :
+
+\[
+    d_{ki} = \norm{\vect{x}_k - \vect{x}_i}, \qquad i = 1,\ldots,17
+\]
+
+On cherche $\vect{x}_k = (x, y, z)^\top \in \R^3$. Ce problème est appelé
+\textbf{trilatération} (analogue 3D du GPS).
+
+\subsection{Système d'équations non-linéaires}
+
+Le développement de $\norm{\vect{x}_k - \vect{x}_i}^2 = d_{ki}^2$ donne :
+
+\begin{equation}
+    \norm{\vect{x}_k}^2 - 2\,\vect{x}_i^\top\vect{x}_k + \norm{\vect{x}_i}^2
+    = d_{ki}^2
+    \qquad i = 1,\ldots,17
+    \label{eq:trilateration_nonlinear}
+\end{equation}
+
+Ce système est non-linéaire en $\vect{x}_k$ à cause du terme
+$\norm{\vect{x}_k}^2$.
+
+\subsection{Linéarisation par soustraction}
+
+Pour éliminer le terme non-linéaire $\norm{\vect{x}_k}^2$, on soustrait
+l'équation $i=1$ de chacune des équations $i = 2, \ldots, 17$ :
+
+\textbf{Équation pour $i = 1$ :}
+\begin{equation}
+    \norm{\vect{x}_k}^2 - 2\,\vect{x}_1^\top\vect{x}_k + \norm{\vect{x}_1}^2
+    = d_{k1}^2
+    \label{eq:eq1}
+\end{equation}
+
+\textbf{Équation pour $i \geq 2$ :}
+\begin{equation}
+    \norm{\vect{x}_k}^2 - 2\,\vect{x}_i^\top\vect{x}_k + \norm{\vect{x}_i}^2
+    = d_{ki}^2
+    \label{eq:eqi}
+\end{equation}
+
+En soustrayant~\eqref{eq:eq1} de~\eqref{eq:eqi}, le terme $\norm{\vect{x}_k}^2$
+s'annule :
+
+\begin{equation}
+    -2\,(\vect{x}_i - \vect{x}_1)^\top\vect{x}_k
+    + \norm{\vect{x}_i}^2 - \norm{\vect{x}_1}^2
+    = d_{ki}^2 - d_{k1}^2
+\end{equation}
+
+En réarrangeant :
+
+\begin{equation}
+    -2\,(\vect{x}_i - \vect{x}_1)^\top\vect{x}_k
+    = d_{ki}^2 - d_{k1}^2 - \norm{\vect{x}_i}^2 + \norm{\vect{x}_1}^2
+    \label{eq:linear_eq}
+\end{equation}
+
+\subsection{Formulation matricielle par moindres carrés}
+
+On définit pour $i = 2, \ldots, 17$ :
+
+\begin{equation}
+    a_i = -2\,(\vect{x}_i - \vect{x}_1)^\top \in \R^{1\times 3},
+    \qquad
+    b_i = d_{ki}^2 - d_{k1}^2 - \norm{\vect{x}_i}^2 + \norm{\vect{x}_1}^2 \in \R
+\end{equation}
+
+On obtient le système linéaire surdéterminé (16 équations, 3 inconnues) :
+
+\begin{equation}
+    \mat{A}\,\vect{x}_k = \vect{b}
+    \label{eq:linear_system}
+\end{equation}
+
+avec :
+
+\begin{equation}
+    \mat{A} = \begin{pmatrix} a_2 \\ \vdots \\ a_{17} \end{pmatrix}
+    = -2\begin{pmatrix}
+        (\vect{x}_2 - \vect{x}_1)^\top \\
+        \vdots \\
+        (\vect{x}_{17} - \vect{x}_1)^\top
+    \end{pmatrix}
+    \in \R^{16\times 3},
+    \qquad
+    \vect{b} = \begin{pmatrix} b_2 \\ \vdots \\ b_{17} \end{pmatrix}
+    \in \R^{16}
+\end{equation}
+
+Le système étant surdéterminé ($16 > 3$), on cherche la solution au sens des
+\textbf{moindres carrés} :
+
+\begin{equation}
+    \boxed{\vect{x}_k^* = \underset{\vect{x} \in \R^3}{\arg\min}\;
+    \norm{\mat{A}\vect{x} - \vect{b}}^2}
+    \label{eq:lstsq}
+\end{equation}
+
+\begin{proposition}[Solution des moindres carrés]
+    Si $\mat{A}$ est de rang plein (rang 3), la solution unique est :
+    \begin{equation}
+        \vect{x}_k^* = (\mat{A}^\top\mat{A})^{-1}\mat{A}^\top\vect{b}
+    \end{equation}
+    En pratique, on utilise la décomposition QR ou SVD de $\mat{A}$ pour
+    une meilleure stabilité numérique (\texttt{numpy.linalg.lstsq}).
+\end{proposition}
+
+\begin{remark}[Pourquoi 16 équations améliorent la robustesse]
+    Trois équations suffiraient théoriquement pour trois inconnues. En
+    utilisant les 16 équations disponibles, la solution aux moindres carrés
+    est un estimateur de \textbf{variance minimale} : les erreurs de mesure
+    (bruit sur les TOA, réflexions parasites) sont moyennées, ce qui réduit
+    l'erreur quadratique moyenne sur $\vect{x}_k^*$.
+\end{remark}
+
+\begin{remark}[Choix du point de référence]
+    L'équation~\eqref{eq:linear_eq} utilise $\vect{x}_1$ comme point de
+    référence. Ce choix est arbitraire ; en pratique on peut améliorer la
+    stabilité numérique en choisissant le microphone dédié le plus proche du
+    microphone d'ambiance à localiser, de sorte que $d_{k1}$ soit le plus
+    petit possible.
+\end{remark}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Orientation sémantique des axes sans Kabsch}
+\label{sec:orientation}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Motivation}
+
+La Proposition~\ref{prop:rotation_ambiguity} montre que la solution MDS est
+définie à une isométrie près.  L'algorithme de Kabsch (Section~\ref{sec:kabsch})
+résout ce problème par optimisation sur des points d'ancrage GPS, mais
+requiert la connaissance préalable des coordonnées réelles de plusieurs
+microphones.
+
+Lorsque ces données ne sont pas disponibles, la \textbf{disposition connue
+d'un orchestre symphonique} fournit des contraintes d'orientation suffisantes
+pour lever les trois degrés de liberté (signe de chaque axe) et identifier
+quelle colonne de $\mat{X}$ correspond à chaque direction physique.
+
+\subsection{Contraintes orchestrales}
+
+La disposition standard d'un orchestre symphonique impose les relations
+suivantes entre les sections :
+
+\begin{enumerate}
+    \item \textbf{Profondeur} : les cordes (Vln, Vla, Vcl, CBasse) occupent
+        les premiers rangs, les cuivres et percussions les rangs arrière.
+        Le centroïde des cordes est donc \emph{devant} celui des cuivres.
+
+    \item \textbf{Latéral} : les premiers violons sont à gauche du chef
+        d'orchestre, les violoncelles à droite.  En convention SOFA
+        ($90° =$ gauche), $\vect{x}_{\text{Vln}_1}$ a une composante latérale
+        positive par rapport à $\vect{x}_{\text{Vcl}}$.
+
+    \item \textbf{Hauteur} : tous les instruments sont sur la même scène,
+        avec une faible variation verticale ($\leq 2\,\text{m}$).  L'axe de
+        hauteur correspond donc au troisième axe principal (variance minimale).
+\end{enumerate}
+
+\subsection{Algorithme d'orientation}
+
+Soit $\mat{X} \in \R^{n \times 3}$ la solution brute du cMDS, avec les
+colonnes ordonnées par variance décroissante ($\lambda_1 \geq \lambda_2 \geq
+\lambda_3$).  On définit les ensembles d'indices :
+
+\begin{align*}
+    \mathcal{S} &= \{\text{Vln}_1, \text{Vln}_2, \text{Vla}, \text{Vcl},
+                     \text{CBasse}_1, \text{CBasse}_2\} \\
+    \mathcal{B} &= \{\text{Cors}, \text{Trompettes}, \text{Trombones},
+                     \text{Tuba}, \text{Timbales}, \text{GC}\}
+\end{align*}
+
+et les centroïdes de groupe :
+
+\begin{equation}
+    \bar{\vect{x}}_{\mathcal{S}} = \frac{1}{|\mathcal{S}|}
+    \sum_{i \in \mathcal{S}} \vect{x}_i,
+    \qquad
+    \bar{\vect{x}}_{\mathcal{B}} = \frac{1}{|\mathcal{B}|}
+    \sum_{i \in \mathcal{B}} \vect{x}_i
+\end{equation}
+
+\paragraph{Étape 1 — Identification des axes.}
+
+\begin{align}
+    k_{\rm prof}   &= \underset{k \in \{1,2,3\}}{\arg\max}\;
+                      \bigl|(\bar{\vect{x}}_{\mathcal{B}}
+                           - \bar{\vect{x}}_{\mathcal{S}})_k\bigr|
+    \label{eq:depth_axis}\\[4pt]
+    k_{\rm lat}    &= \underset{k \neq k_{\rm prof}}{\arg\max}\;
+                      |(\vect{x}_{\text{Vln}_1} - \vect{x}_{\text{Vcl}})_k|
+    \label{eq:lat_axis}\\[4pt]
+    k_{\rm haut}   &= \{1,2,3\} \setminus \{k_{\rm prof},\, k_{\rm lat}\}
+    \label{eq:height_axis}
+\end{align}
+
+L'axe de profondeur~\eqref{eq:depth_axis} est celui qui sépare le plus les
+deux groupes sémantiques.  L'axe latéral~\eqref{eq:lat_axis} est identifié
+parmi les deux restants par la séparation Vln$_1$/Vcl.
+
+\paragraph{Étape 2 — Permutation.}
+
+On réordonne les colonnes de $\mat{X}$ :
+\begin{equation}
+    \mat{X}' = \mat{X}[:,\; (k_{\rm prof},\; k_{\rm lat},\; k_{\rm haut})]
+\end{equation}
+
+\paragraph{Étape 3 — Correction des signes.}
+
+\begin{align}
+    \text{Si } (\bar{x}'_{\mathcal{B}})_1 < (\bar{x}'_{\mathcal{S}})_1
+    &\;\Longrightarrow\; X'_{:,1} \leftarrow -X'_{:,1}
+    \quad\text{(cuivres en }X > 0\text{)} \label{eq:sign_depth}\\[4pt]
+    \text{Si } x'_{\text{Vln}_1, 2} < x'_{\text{Vcl}, 2}
+    &\;\Longrightarrow\; X'_{:,2} \leftarrow -X'_{:,2}
+    \quad\text{(Vln}_1\text{ en }Y > 0\text{)} \label{eq:sign_lat}
+\end{align}
+
+\begin{remark}[Limites de l'approche]
+    Cette méthode lève les ambiguïtés de signe ($\pm 1$ sur chaque axe) et
+    identifie la correspondance axe MDS $\leftrightarrow$ direction physique,
+    mais ne corrige pas l'angle de rotation dans le plan horizontal (angle de
+    la scène par rapport à l'axe profondeur).  Pour un recalage métrique
+    complet, l'algorithme de Kabsch (Section~\ref{sec:kabsch}) reste nécessaire
+    dès lors que les coordonnées réelles d'au moins trois microphones sont
+    connues.
+\end{remark}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Alignement de coordonnées : algorithme de Kabsch}
+\label{sec:kabsch}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Motivation}
+
+La Proposition~\ref{prop:rotation_ambiguity} montre que MDS renvoie une
+configuration définie à une isométrie près.  Lorsque les coordonnées réelles
+de $p \geq 3$ points d'ancrage $\vect{q}_1, \ldots, \vect{q}_p \in \R^3$
+sont connues (plan de scène, positions GPS), on cherche la rotation
+$\mat{R} \in \R^{3\times3}$ et la translation $\vect{t} \in \R^3$ qui
+minimisent l'erreur de recalage :
+
+\begin{equation}
+    (\mat{R}^*, \vect{t}^*) = \underset{\substack{\mat{R}^\top\mat{R}=\mat{I}\\\det(\mat{R})=1}}{\arg\min}
+    \sum_{i=1}^p \norm{\mat{R}\,\vect{p}_i + \vect{t} - \vect{q}_i}^2
+\end{equation}
+
+où $\vect{p}_i$ sont les positions estimées pour ces mêmes points.
+
+\subsection{Algorithme de Kabsch}
+
+\begin{enumerate}
+    \item \textbf{Centrage :}
+    \[
+        \bar{\vect{p}} = \frac{1}{p}\sum_i\vect{p}_i, \quad
+        \bar{\vect{q}} = \frac{1}{p}\sum_i\vect{q}_i, \quad
+        \tilde{\vect{p}}_i = \vect{p}_i - \bar{\vect{p}}, \quad
+        \tilde{\vect{q}}_i = \vect{q}_i - \bar{\vect{q}}
+    \]
+
+    \item \textbf{Matrice de covariance croisée :}
+    \[
+        \mat{H} = \sum_{i=1}^p \tilde{\vect{p}}_i\,\tilde{\vect{q}}_i^\top
+        = \mat{P}_c^\top\mat{Q}_c \;\in\; \R^{3\times 3}
+    \]
+
+    \item \textbf{SVD :} $\mat{H} = \mat{U}\mat{S}\mat{V}^\top$
+
+    \item \textbf{Rotation optimale :}
+    \[
+        \mat{R}^* = \mat{V}\,\mat{U}^\top
+    \]
+    Si $\det(\mat{R}^*) = -1$ (réflexion), on corrige :
+    $\mat{V}_{:,3} \leftarrow -\mat{V}_{:,3}$, puis $\mat{R}^* = \mat{V}\mat{U}^\top$.
+
+    \item \textbf{Translation :} $\vect{t}^* = \bar{\vect{q}} - \mat{R}^*\bar{\vect{p}}$
+
+    \item \textbf{Application à toutes les positions :}
+    \[
+        \vect{x}_j^{\text{aligné}} = \mat{R}^*\,\vect{x}_j + \vect{t}^*
+    \]
+\end{enumerate}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Conversion en coordonnées sphériques}
+% ══════════════════════════════════════════════════════════════════════════════
+
+Une fois les positions cartésiennes $\vect{x}_j = (x_j, y_j, z_j)^\top$
+disponibles dans le repère de la salle (axe $x$ vers la scène, axe $y$ vers
+la gauche, axe $z$ vers le haut), on les convertit en coordonnées sphériques
+pour l'interpolateur HRTF :
+
+\begin{align}
+    r_j &= \norm{\vect{x}_j} \\
+    \theta_j &= \operatorname{atan2}(y_j,\, x_j)
+        \cdot \frac{180}{\pi} \quad [\text{azimut, degrés}]\\
+    \phi_j &= \arcsin\!\left(\frac{z_j}{r_j}\right)
+        \cdot \frac{180}{\pi} \quad [\text{élévation, degrés}]
+\end{align}
+
+La convention SOFA CCW est appliquée : $0°$ = devant, $90°$ = gauche,
+$180°$ = derrière, $270°$ = droite.
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section*{Conclusion}
+% ══════════════════════════════════════════════════════════════════════════════
+
+Ce document présente la chaîne mathématique complète de localisation des 23
+microphones à partir des données TOA.
+
+Deux corrections robustifient l'extraction des distances.
+D'abord, le critère de sélection du microphone dédié utilise
+$\arg\min(s_{ij}/a_{ij})$ plutôt que $\arg\min(s_{ij})$ seul, afin d'éliminer
+les artefacts de déclenchement à faible amplitude.  Ensuite, la distance entre
+deux micros dédiés est estimée par $\min(s_{ij}, s_{ji})/f_s \cdot c$ plutôt
+que par $s_{ij}/f_s \cdot c$ : prendre le minimum des deux sens de mesure
+fournit une borne supérieure plus serrée sur le trajet direct, en évitant les
+réflexions tardives qui peuvent dominer le maximum de la RIR.
+
+La Phase 1 exploite la structure bilinéaire des distances euclidiennes au carré
+pour récupérer la matrice de Gram par double centrage, puis la décompose par
+diagonalisation pour obtenir les coordonnées 3D des 17 microphones dédiés.
+L'orientation des axes est résolue sans points d'ancrage GPS, par contraintes
+sémantiques sur la disposition orchestrale (profondeur cordes/cuivres, latéral
+Vln$_1$/Vcl).
+
+La Phase 2 linéarise le problème de trilatération par soustraction d'équations,
+permettant une résolution robuste par moindres carrés pour les 5 microphones
+d'ambiance.  L'algorithme de Kabsch offre un recalage métrique complet lorsque
+les coordonnées réelles de points d'ancrage sont disponibles.
+
+\end{document}
