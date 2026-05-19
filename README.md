@@ -49,27 +49,31 @@ Le dataset IRCAM utilise une convention **horaire** (CW : 90° = droite), diffé
 ---
 
 ## Architecture
-
 ```
-hrtf.py               ← Chargement et accès au dataset SOFA
-hrtf_utils.py         ← Fonctions pures partagées (phase minimum, onset, reconstruction)
-HRTFInterpolator.py   ← Interpolation barycentrique sphérique (positions hors grille)
-HRTFGen.py            ← HRTF générique par moyenne de N sujets SOFA
-Convolution.py        ← Convolution statique (source fixe)
-DistanceModel.py      ← Modèle de propagation en champ libre
-Soundsource.py        ← Dataclass source sonore positionnée
-Soundscape.py         ← Mix multi-source statique
-GenerateSound.py      ← Générateurs de signaux de test
-Trajectory.py         ← Trajectoires spatiales (5 types)
-SegmentEngine.py      ← Convolution par blocs avec crossfade (windowing entrée)
-WOLAEngine.py         ← Convolution par blocs WOLA — reconstruction parfaite (Hann COLA)
-DynamicConvolver.py   ← Convolution dynamique (SegmentEngine ou WOLAEngine)
-DynamicSoundscape.py  ← Mix multi-source dynamique
-SoundVisu.py          ← Visualisations HRTF / ILD / ITD
-SpatialisationVerif.py← Vérification objective de la spatialisation
-visualisation.py      ← Outils de visualisation complémentaires
+src/
+├── hrtf/
+│   ├── hrtf.py               ← Chargement et accès au dataset SOFA
+│   ├── hrtf_utils.py         ← Fonctions pures partagées (phase minimum, onset, reconstruction)
+│   ├── HRTFInterpolator.py   ← Interpolation barycentrique sphérique (positions hors grille)
+│   └── HRTFGen.py            ← HRTF générique par moyenne de N sujets SOFA
+├── engine/
+│   ├── Convolution.py        ← Convolution statique (source fixe)
+│   ├── SegmentEngine.py      ← Convolution par blocs avec crossfade (windowing entrée)
+│   ├── WOLAEngine.py         ← Convolution par blocs WOLA — reconstruction parfaite (Hann COLA)
+│   └── DynamicConvolver.py   ← Convolution dynamique (SegmentEngine ou WOLAEngine)
+├── scene/
+│   ├── Soundsource.py        ← Dataclass source sonore positionnée
+│   ├── DistanceModel.py      ← Modèle de propagation en champ libre
+│   ├── Soundscape.py         ← Mix multi-source statique
+│   ├── DynamicSoundscape.py  ← Mix multi-source dynamique
+│   └── Trajectory.py         ← Trajectoires spatiales (5 types)
+├── synthesis/
+│   └── GenerateSound.py      ← Générateurs de signaux de test
+└── analysis/
+    ├── SoundVisu.py          ← Visualisations HRTF / ILD / ITD
+    ├── SpatialisationVerif.py← Vérification objective de la spatialisation
+    └── visualisation.py      ← Outils de visualisation complémentaires
 ```
-
 ---
 
 ## Méthodes implémentées
@@ -226,20 +230,22 @@ Vérifie objectivement la cohérence de la spatialisation :
 
 ### Source fixe
 ```python
+# Source fixe
 from hrtf import HRTF
-from Convolution import HRTFConvolver
+from engine import HRTFConvolver
 
 hrtf = HRTF.from_sofa("dataset/IRC_1002_C_44100.sofa")
 conv = HRTFConvolver(hrtf, azimuth=45.0, elevation=0.0)
 output = conv.convolve_file("signal.wav")
+
 ```
 
 ### Source en mouvement (WOLAEngine)
 ```python
-from hrtf import HRTF
-from HRTFInterpolator import HRTFInterpolator
-from Trajectory import CircularTrajectory
-from DynamicConvolver import DynamicConvolver
+# Source en mouvement (WOLAEngine)
+from hrtf import HRTF, HRTFInterpolator
+from scene import CircularTrajectory
+from engine import DynamicConvolver
 import soundfile as sf
 
 hrtf   = HRTF.from_sofa("dataset/generic.sofa")
@@ -253,7 +259,8 @@ sf.write("output.wav", output, 44100)
 
 ### HRTF générique depuis plusieurs sujets
 ```python
-from HRTFGen import HRTFGen
+# HRTF générique depuis plusieurs sujets
+from hrtf import HRTFGen
 
 gen = HRTFGen.from_directory("dataset/", pattern="IRC_*.sofa")
 gen.save("dataset/generic.sofa")
@@ -282,40 +289,47 @@ Tout le code utilise la **convention SOFA** :
 ```
 son_spatialisation/
 ├── dataset/
-│   ├── IRC_1002_C_44100.sofa      # Sujet 1002 — IRCAM LISTEN
-│   ├── IRC_1003_C_44100.sofa      # Sujet 1003
-│   ├── IRC_1015_C_44100.sofa      # Sujet 1015
-│   ├── IRC_1042_C_44100.sofa      # Sujet 1042
-│   ├── IRC_1048_C_44100.sofa      # Sujet 1048
-│   ├── IRC_1057_C_44100.sofa      # Sujet 1057
-│   └── generic.sofa               # HRTF générique (moyenne des 6 sujets)
-├── sound/generated/               # Fichiers WAV exportés (non versionnés)
+│   ├── IRC_1002_C_44100.sofa
+│   ├── IRC_1003_C_44100.sofa
+│   ├── IRC_1015_C_44100.sofa
+│   ├── IRC_1042_C_44100.sofa
+│   ├── IRC_1048_C_44100.sofa
+│   ├── IRC_1057_C_44100.sofa
+│   └── generic.sofa
+├── src/
+│   ├── hrtf/
+│   │   ├── hrtf.py
+│   │   ├── hrtf_utils.py
+│   │   ├── HRTFInterpolator.py
+│   │   └── HRTFGen.py
+│   ├── engine/
+│   │   ├── Convolution.py
+│   │   ├── SegmentEngine.py
+│   │   ├── WOLAEngine.py
+│   │   └── DynamicConvolver.py
+│   ├── scene/
+│   │   ├── Soundsource.py
+│   │   ├── DistanceModel.py
+│   │   ├── Soundscape.py
+│   │   ├── DynamicSoundscape.py
+│   │   └── Trajectory.py
+│   ├── synthesis/
+│   │   └── GenerateSound.py
+│   └── analysis/
+│       ├── SoundVisu.py
+│       ├── SpatialisationVerif.py
+│       └── visualisation.py
+├── sound/generated/
 ├── notebooks/
-│   ├── static HRTF Demo.ipynb     # Demo convolution statique
-│   ├── DynamicConvolver_viz.ipynb # Demo source en mouvement + WOLAEngine
-│   ├── DynamicSoundscape_viz.ipynb# Demo paysage dynamique
-│   ├── HRTFGen.ipynb              # Demo HRTF générique multi-sujets
-│   ├── SegmentEngine_Viz.ipynb    # Visualisation du moteur de segments
-│   └── traj_viz.ipynb             # Visualisation des trajectoires
+│   ├── static HRTF Demo.ipynb
+│   ├── DynamicConvolver_viz.ipynb
+│   ├── DynamicSoundscape_viz.ipynb
+│   ├── HRTFGen.ipynb
+│   ├── SegmentEngine_Viz.ipynb
+│   └── traj_viz.ipynb
 ├── docs/
-│   └── hrtf_interpolation.tex     # Formalisation mathématique de l'interpolation
-├── hrtf.py
-├── hrtf_utils.py
-├── HRTFInterpolator.py
-├── HRTFGen.py
-├── Convolution.py
-├── DistanceModel.py
-├── Soundsource.py
-├── Soundscape.py
-├── GenerateSound.py
-├── Trajectory.py
-├── SegmentEngine.py
-├── WOLAEngine.py
-├── DynamicConvolver.py
-├── DynamicSoundscape.py
-├── SoundVisu.py
-├── SpatialisationVerif.py
-├── visualisation.py
+│   └── hrtf_interpolation.tex
+├── pyproject.toml
 └── Requirements.txt
 ```
 
