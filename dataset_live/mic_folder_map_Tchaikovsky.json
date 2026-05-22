@@ -1,0 +1,20 @@
+{
+  "_comment": "Maps microphone folder names to their position label in positions_phase1.json.",
+  "Violin_1":           "Vln_1",
+  "Violin_2":           "Vln_2",
+  "Viola":              "Vla",
+  "Cello":              "Vcl",
+  "Bass_1":             "DBass_1",
+  "Bass_2":             "DBass_2",
+  "Flute":              "Flute",
+  "Oboe":               "Oboe",
+  "Clarinet":           "Clarinet",
+  "Bassoon":            "Bassoon",
+  "Horn":               "Horns",
+  "Trumpet":            "Trumpets",
+  "Trombone":           "Trombones",
+  "Tuba":               "Tuba",
+  "Timpani":            "Timpani",
+  "untunedpercussion":  "Bass_Drum",
+  "Harp":               "Harp"
+}
