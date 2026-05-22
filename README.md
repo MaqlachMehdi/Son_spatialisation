@@ -4,6 +4,107 @@ Système de spatialisation audio 3D par convolution avec des HRTFs mesurées sur
 
 ---
 
+## Écouter les exemples *(casque recommandé)*
+
+<table>
+<tr>
+<td align="center"><b>Cercle hors grille</b><br><sub>HRTFInterpolator — rotation circulaire<br>sur positions hors grille de mesure</sub><br><audio controls><source src="sound/generated/cercle_hors_grille.wav" type="audio/wav"></audio></td>
+<td align="center"><b>Ping-pong Do→La</b><br><sub>DynamicConvolver WOLAEngine —<br>source en mouvement gauche/droite</sub><br><audio controls><source src="sound/generated/pingpong_do_la.wav" type="audio/wav"></audio></td>
+<td align="center"><b>Tchaïkovski — scène complète</b><br><sub>InstrumentSpatializer — orchestre entier<br>reconstruit depuis The Spheres dataset</sub><br><audio controls><source src="sound/tchaikovsky_full.wav" type="audio/wav"></audio></td>
+</tr>
+</table>
+
+---
+
+## Nouveautés — Reconstruction orchestrale The Spheres
+
+### Structure du dataset The Spheres
+
+Le dataset **The Spheres** (enregistrements orchestraux multi-micros) est organisé ainsi :
+
+```
+dataset_live/Tchaikovsky/
+├── Violin_1/          ← MICROPHONE placé près des violons
+│   ├── Violin_1_1.flac   → violon 1 capté par ce micro  (proche, fort)
+│   ├── Trumpet_1.flac    → trompette captée par ce micro (lointain, faible)
+│   └── ...
+├── Trumpet/           ← MICROPHONE placé près des trompettes
+│   ├── Violin_1_1.flac   → violon 1 capté par ce micro  (lointain, faible)
+│   ├── Trumpet_1.flac    → trompette captée par ce micro (proche, fort)
+│   └── ...
+```
+
+> **Règle clé** : le **dossier** = position du microphone, le **fichier** = source instrumentale captée.  
+> Chaque instrument a été enregistré en isolation. Chaque fichier = une paire source/micro.
+
+### Module `src/instrument/` — InstrumentSpatializer
+
+Pipeline de reconstruction binaurale par stem :
+
+```
+Pour chaque dossier-micro qui contient le fichier du stem :
+  1. Charge l'audio (source isolée captée depuis ce micro)
+  2. Récupère la position 3D du dossier-micro (via mic_folder_map)
+  3. Convolue avec la paire HRIR correspondante (HRTFInterpolator)
+  4. Applique le DistanceModel (atténuation 1/r + retard)
+  5. Accumule → mix binaural du stem
+```
+
+**Un WAV par stem — séparation préservée :**
+
+```
+render_instrument("Bassoon")  →  Bassoon_1_spatial.wav
+                                 Bassoon_2_spatial.wav
+
+render_instrument("Horn")     →  Horn_1_spatial.wav
+                                 Horn_2_spatial.wav
+                                 Horn_3_spatial.wav
+                                 Horn_4_spatial.wav
+```
+
+**Usage :**
+```python
+from src.instrument import InstrumentSpatializer, RenderConfig
+
+spatializer = InstrumentSpatializer(
+    hrtf_path           = "dataset/generic.sofa",
+    positions_json      = "dataset_live/positions_phase1.json",
+    channel_map_json    = "dataset_live/channel_map_Tchaikovsky.json",
+    mic_folder_map_json = "dataset_live/mic_folder_map_Tchaikovsky.json",
+    dataset_root        = "dataset_live",
+    piece               = "Tchaikovsky",
+    config              = RenderConfig(normalize=False),
+)
+
+# Un stem isolé
+mix = spatializer.render_stem("Violin_1_1", output_path="sound/violin_1_1.wav")
+
+# Toute une famille d'instruments
+spatializer.render_instrument("Horn", output_dir="sound/scene/")
+
+# Scène complète
+for instrument in spatializer.available_instruments():
+    spatializer.render_instrument(instrument, output_dir="sound/tchaikovsky_scene/")
+```
+
+**Mix final :**
+```python
+import soundfile as sf
+from src.instrument import InstrumentSpatializer
+
+stem_files = sorted(Path("sound/tchaikovsky_scene").glob("*_spatial.wav"))
+signals = [sf.read(str(f), dtype="float32", always_2d=True)[0] for f in stem_files]
+
+mix  = InstrumentSpatializer.mix_stereo(signals)
+peak = max(abs(mix.max()), abs(mix.min())) + 1e-10
+sf.write("sound/tchaikovsky_full.wav", (mix / peak).astype("float32"), 48000)
+```
+
+**Exemple — scène Tchaïkovski complète :**
+<audio controls><source src="sound/tchaikovsky_full.wav" type="audio/wav"></audio>
+
+---
+
 ## La base de données : IRCAM LISTEN
 
 Le projet repose sur la base de données **IRCAM LISTEN**, développée à l'Institut de Recherche et Coordination Acoustique/Musique (Paris).
@@ -15,13 +116,11 @@ Le dossier `dataset/` contient des mesures de **Head-Related Transfer Functions 
 | Fichier | Description |
 |---|---|
 | `IRC_1002_C_44100.sofa` … `IRC_1057_C_44100.sofa` | 6 sujets IRCAM LISTEN individuels |
-| `generic.sofa` | HRTF générique — moyenne pondérée des sujets (calculée par `HRTFGen`) ( téléchargé les autres pour une meilleur approximation) |
+| `generic.sofa` | HRTF générique — moyenne pondérée des sujets (calculée par `HRTFGen`) |
 
-Une HRTF est la réponse en fréquence du trajet acoustique entre une source sonore et le tympan, pour une position donnée. Elle encode la façon dont la tête, les oreilles et le torse colorent le son selon la direction d'arrivée. En convolant un signal mono avec la paire gauche/droite correspondante à une position (az, el), on recrée la perception que la source vient de cette direction dans un casque.
+Une HRTF encode la façon dont la tête, les oreilles et le torse colorent le son selon la direction d'arrivée. En convolant un signal mono avec la paire gauche/droite correspondante à une position (az, el), on recrée la perception que la source vient de cette direction dans un casque.
 
 ### Structure du fichier SOFA
-
-Le format SOFA (Spatially Oriented Format for Acoustics, AES69-2022) stocke :
 
 | Variable | Forme | Description |
 |---|---|---|
@@ -35,16 +134,8 @@ Le format SOFA (Spatially Oriented Format for Acoustics, AES69-2022) stocke :
 - **187 positions** de mesure réparties sur la sphère
 - **Plan horizontal** (el=0°) : 72 positions tous les 5°
 - **Élévations disponibles** : −45°, −30°, −15°, 0°, 15°, 30°, 45°, 60°, 75°, 90°
-- **Distance de mesure** : r₀ = 2.06 m (microphone dans le conduit auditif)
+- **Distance de mesure** : r₀ = 2.06 m
 - **Longueur des HRIRs** : 512 échantillons (~11.6 ms)
-
-### Convention d'azimut
-
-Le dataset IRCAM utilise une convention **horaire** (CW : 90° = droite), différente du standard SOFA (CCW : 90° = gauche). Le chargeur détecte automatiquement cette convention et convertit les azimuts au standard SOFA à l'initialisation :
-
-```
-[HRTF] Convention CW (90deg=droite) detectee -> azimuts convertis en CCW SOFA standard
-```
 
 ---
 
@@ -67,6 +158,11 @@ src/
 │   ├── Soundscape.py         ← Mix multi-source statique
 │   ├── DynamicSoundscape.py  ← Mix multi-source dynamique
 │   └── Trajectory.py         ← Trajectoires spatiales (5 types)
+├── instrument/
+│   ├── InstrumentSpatializer.py  ← Reconstruction binaurale par stem (The Spheres)
+│   ├── recording_repo.py         ← Accès aux fichiers audio du dataset
+│   ├── position_provider.py      ← Résolution stem/dossier → position 3D
+│   └── models.py                 ← ListenerConfig, RenderConfig, MicRecording
 ├── synthesis/
 │   └── GenerateSound.py      ← Générateurs de signaux de test
 └── analysis/
@@ -74,6 +170,7 @@ src/
     ├── SpatialisationVerif.py← Vérification objective de la spatialisation
     └── visualisation.py      ← Outils de visualisation complémentaires
 ```
+
 ---
 
 ## Méthodes implémentées
@@ -84,26 +181,24 @@ Lecture du fichier SOFA via `netCDF4`. Détecte automatiquement :
 - **L'ordre des oreilles** depuis `ReceiverPosition` (y > 0 = gauche)
 - **La convention d'azimut** (CW vs CCW) par comparaison d'énergie à 90°
 
-Sélection du voisin le plus proche via **distance grand-cercle** (correcte aux pôles, contrairement à la distance euclidienne sur les angles).
+Sélection du voisin le plus proche via **distance grand-cercle**.
 
 ### 2. Interpolation HRTF — `HRTFInterpolator`
 
 Pour les positions hors grille de mesure. Évite l'artefact de filtre en peigne de l'interpolation complexe directe.
 
 **Pipeline :**
-1. **Triangulation de Delaunay sphérique** via convex hull 3D (les positions HRTF forment une sphère convexe)
-2. **Coordonnées barycentriques** (formule de Van Oosterom) — pondération angulaire correcte
+1. **Triangulation de Delaunay sphérique** via convex hull 3D
+2. **Coordonnées barycentriques** (formule de Van Oosterom)
 3. **Interpolation magnitude + onset séparés** :
-   - Magnitude : `M_interp(f) = Σ ωᵢ · |Hᵢ(f)|` — pas d'annulation spectrale
-   - Retard d'onset : `τ_interp = Σ ωᵢ · τᵢ` — délai fractionnaire interpolé
-   - Phase minimum reconstruite par cepstre réel (Oppenheim & Schafer) via `hrtf_utils`
-   - Retard exact appliqué en fréquentiel : `H_final = H_mp · exp(−j2πf·τ_interp)`
+   - Magnitude : `M_interp(f) = Σ ωᵢ · |Hᵢ(f)|`
+   - Retard d'onset : `τ_interp = Σ ωᵢ · τᵢ`
+   - Phase minimum reconstruite par cepstre réel
 
-**Drop-in replacement de `HRTF`** — même interface `get_hrir()`, utilisable partout sans modification.
+**Exemple — rotation circulaire hors grille :**
+<audio controls><source src="sound/generated/cercle_hors_grille.wav" type="audio/wav"></audio>
 
 ### 3. Fonctions utilitaires partagées — `hrtf_utils`
-
-Module de fonctions pures utilisé par `HRTFInterpolator` et `HRTFGen` :
 
 | Fonction | Description |
 |---|---|
@@ -114,79 +209,48 @@ Module de fonctions pures utilisé par `HRTFInterpolator` et `HRTFGen` :
 
 ### 4. HRTF générique — `HRTFGen`
 
-Construit une HRTF représentative en moyennant N sujets SOFA. Résout le problème de la HRTF non-individualisée sans nécessiter de nouvelles mesures.
+Construit une HRTF représentative en moyennant N sujets SOFA.
 
-**Algorithme (par position et par oreille) :**
 ```
-M_avg(f) = Σᵢ wᵢ · |RFFT(hᵢ(f))|   — moyenne des modules (jamais d'annulation spectrale)
+M_avg(f) = Σᵢ wᵢ · |RFFT(hᵢ(f))|   — moyenne des modules
 τ_avg    = Σᵢ wᵢ · τᵢ               — onset moyen pondéré
 H_mp     = MinimumPhase(M_avg)        — reconstruction via cepstre réel
 H_final  = H_mp · exp(−j2πf·τ_avg)  — retard fractionnaire exact
 ```
 
-Contrairement à la moyenne de spectres complexes (risque de filtre en peigne dû aux différences d'ITD inter-sujets), la moyenne des modules garantit M_avg > 0 — aucune annulation spectrale possible.
-
-**Usage :**
-```python
-# Calcul une seule fois (~30 s pour 6 sujets)
-gen = HRTFGen.from_directory("dataset/", pattern="IRC_*.sofa")
-gen.save("dataset/generic.sofa")
-
-# Utilisation rapide (rechargement instantané depuis le cache SOFA)
-gen    = HRTFGen.from_sofa("dataset/generic.sofa")
-interp = HRTFInterpolator(gen)   # interpolation sur la HRTF générique
-conv   = DynamicConvolver(hrtf=interp, ..., hop_ms=25.0)
-```
-
-**Drop-in replacement de `HRTF`** — même interface, compatible avec `HRTFInterpolator` et `DynamicConvolver`.
-
 ### 5. Convolution statique — `HRTFConvolver`
 
-Convolution fréquentielle via `fftconvolve` (scipy). Accepte un signal depuis fichier WAV ou depuis un array numpy.
-
-```
-signal mono × HRIR_gauche → canal gauche
-signal mono × HRIR_droite → canal droit
-```
-
-Normalisation binaural conjointe (même facteur pour L et R, préserve l'équilibre interaural).
+Convolution fréquentielle via `fftconvolve`. Normalisation binaural conjointe (même facteur L et R).
 
 ### 6. Modèle de distance — `DistanceModel`
-
-Étend les HRTFs mesurées à r₀ = 2.06 m vers une distance cible r quelconque. Trois effets physiques :
 
 | Effet | Formule | Activation |
 |---|---|---|
 | Atténuation 1/r | `gain = r₀ / r` | Toujours |
 | Retard de propagation | `Δt = (r − r₀) / c` | Si `r > r₀` |
-| Absorption atmosphérique | ISO 9613-1 (FIR) | Optionnel, pertinent pour r > 50 m |
-
-Note : le son dans l'air est non-dispersif (pas d'étalement temporel fréquence-dépendant en champ libre).
+| Absorption atmosphérique | ISO 9613-1 (FIR) | Optionnel |
 
 ### 7. Paysage sonore statique — `Soundscape`
 
-Combine N sources statiques spatialisées indépendamment puis mixées :
-- Convolution parallèle de chaque source
-- Zero-padding pour aligner les longueurs
-- Somme et normalisation conjointe
+Combine N sources statiques spatialisées indépendamment puis mixées.
+
+**Exemple — Do + Si spatialisés en positions fixes :**
+<audio controls><source src="sound/generated/soundscape_do_si.wav" type="audio/wav"></audio>
 
 ### 8. Trajectoires — `Trajectory`
-
-Convertit un instant `t` (secondes) en position angulaire `(az°, el°)`. Cinq types :
 
 | Classe | Description |
 |---|---|
 | `CircularTrajectory` | Rotation à vitesse constante, élévation fixe |
-| `EllipseTrajectory` | Trajectoire elliptique avec demi-axes azimut et élévation configurables |
-| `LinearTrajectory` | Interpolation sphérique entre deux positions (SLERP) |
-| `RectilinearTrajectory` | Déplacement en ligne droite dans l'espace 3D (distance variable) |
+| `EllipseTrajectory` | Trajectoire elliptique avec demi-axes configurables |
+| `LinearTrajectory` | Interpolation sphérique SLERP entre deux positions |
+| `RectilinearTrajectory` | Déplacement en ligne droite (distance variable) |
 | `CustomTrajectory` | Points de passage libres avec interpolation cubique |
 
-Toutes les trajectoires exposent `plot()` (vue temporelle + vue polaire avec gradient de temps).
+**Exemple — trajectoire elliptique :**
+<audio controls><source src="sound/generated/ellipse_interp.wav" type="audio/wav"></audio>
 
 ### 9. Convolution dynamique — `DynamicConvolver` + moteurs
-
-Pour les sources en mouvement. `DynamicConvolver` orchestre la trajectoire et délègue la convolution à l'un des deux moteurs :
 
 #### SegmentEngine — Overlap-Add avec fenêtrage d'entrée
 
@@ -195,34 +259,32 @@ conv = DynamicConvolver(hrtf=hrtf, signal=signal, sr=sr, trajectory=traj,
                          segment_ms=50.0, overlap_ms=15.0, crossfade_type="cosine")
 ```
 
-- Découpe le signal en blocs de `segment_ms` avec look-ahead de `overlap_ms`
-- **Fenêtrage sur l'entrée** (pas sur la sortie) : les mêmes échantillons reçoivent des poids complémentaires dans deux segments adjacents → équivalent à une interpolation implicite des HRIRs, sans filtre en peigne
-- Trois enveloppes disponibles : `linear`, `cosine`, `equal_power`
-
 #### WOLAEngine — Weighted Overlap-Add (COLA Hann)
 
 ```python
-conv = DynamicConvolver(hrtf=hrtf, signal=signal, sr=sr, trajectory=traj,
-                         hop_ms=25.0)
+conv = DynamicConvolver(hrtf=hrtf, signal=signal, sr=sr, trajectory=traj, hop_ms=25.0)
 ```
 
-- Paramètre unique `hop_ms` (pas de choix d'enveloppe)
-- Fenêtre de Hann périodique (`sym=False`) : `w[n] + w[n + hop] = 1.0` exactement (**propriété COLA**)
-- Reconstruction parfaite garantie si la HRTF est stationnaire
-- Recommandé pour les rotations rapides ou les trajectoires avec fort changement d'ITD
+Fenêtre de Hann périodique : `w[n] + w[n + hop] = 1.0` exactement — reconstruction parfaite garantie.
 
-**Règle pour `hop_ms`** : `hop_ms = WOLAEngine.optimal_hop_ms(period_s, angular_resolution_deg=5)`.
+**Exemple — ping-pong Do→La (source en mouvement) :**
+<audio controls><source src="sound/generated/pingpong_do_la.wav" type="audio/wav"></audio>
 
 ### 10. Paysage sonore dynamique — `DynamicSoundscape`
 
 N sources avec chacune leur propre trajectoire. Rendu indépendant puis mix normalisé.
 
-### 11. Vérification — `SpatialisationVerif`
+### 11. Spatialisation orchestrale — `InstrumentSpatializer`
 
-Vérifie objectivement la cohérence de la spatialisation :
+Reconstruction binaurale depuis le dataset The Spheres. Un WAV par stem, tous les dossiers-micros utilisés pour l'image spatiale.
+
+Voir section [Nouveautés](#nouveautés----reconstruction-orchestrale-the-spheres) pour le détail.
+
+### 12. Vérification — `SpatialisationVerif`
+
 - **ILD** (Interaural Level Difference) en dB sur tous les azimuts
-- **ITD** (Interaural Time Delay) en millisecondes sur tous les azimuts
-- Comparaison avec le modèle théorique de Woodworth (tête sphérique)
+- **ITD** (Interaural Time Delay) en ms sur tous les azimuts
+- Comparaison avec le modèle théorique de Woodworth
 
 ---
 
@@ -230,22 +292,19 @@ Vérifie objectivement la cohérence de la spatialisation :
 
 ### Source fixe
 ```python
-# Source fixe
-from hrtf import HRTF
-from engine import HRTFConvolver
+from src.hrtf import HRTF
+from src.engine import HRTFConvolver
 
-hrtf = HRTF.from_sofa("dataset/IRC_1002_C_44100.sofa")
-conv = HRTFConvolver(hrtf, azimuth=45.0, elevation=0.0)
+hrtf   = HRTF.from_sofa("dataset/IRC_1002_C_44100.sofa")
+conv   = HRTFConvolver(hrtf, azimuth=45.0, elevation=0.0)
 output = conv.convolve_file("signal.wav")
-
 ```
 
 ### Source en mouvement (WOLAEngine)
 ```python
-# Source en mouvement (WOLAEngine)
-from hrtf import HRTF, HRTFInterpolator
-from scene import CircularTrajectory
-from engine import DynamicConvolver
+from src.hrtf import HRTF, HRTFInterpolator
+from src.scene import CircularTrajectory
+from src.engine import DynamicConvolver
 import soundfile as sf
 
 hrtf   = HRTF.from_sofa("dataset/generic.sofa")
@@ -253,34 +312,22 @@ interp = HRTFInterpolator(hrtf)
 traj   = CircularTrajectory(duration_s=10.0, period_s=4.0, elevation=22.0)
 conv   = DynamicConvolver(hrtf=interp, signal=signal, sr=44100,
                            trajectory=traj, hop_ms=25.0)
-output = conv.run()   # shape (N, 2)
+output = conv.run()
 sf.write("output.wav", output, 44100)
 ```
 
+### Violon spatialisé (InstrumentSpatializer)
+
+**Violin_1 — reconstruction binaurale depuis enregistrement multi-micros :**
+<audio controls><source src="sound/violin_1_spatial.wav" type="audio/wav"></audio>
+
 ### HRTF générique depuis plusieurs sujets
 ```python
-# HRTF générique depuis plusieurs sujets
-from hrtf import HRTFGen
+from src.hrtf import HRTFGen
 
 gen = HRTFGen.from_directory("dataset/", pattern="IRC_*.sofa")
 gen.save("dataset/generic.sofa")
-gen.plot_comparison(other=hrtf_individual, azimuth=90.0, elevation=0.0)
 ```
-
----
-
-## Convention angulaire
-
-Tout le code utilise la **convention SOFA** :
-
-| Direction | Azimut | Élévation |
-|---|---|---|
-| Devant | 0° | 0° |
-| Gauche | 90° | 0° |
-| Derrière | 180° | 0° |
-| Droite | 270° | 0° |
-| Dessus | — | 90° |
-| Dessous | — | −90° |
 
 ---
 
@@ -288,47 +335,31 @@ Tout le code utilise la **convention SOFA** :
 
 ```
 son_spatialisation/
-├── dataset/
-│   ├── IRC_1002_C_44100.sofa
-│   ├── IRC_1003_C_44100.sofa
-│   ├── IRC_1015_C_44100.sofa
-│   ├── IRC_1042_C_44100.sofa
-│   ├── IRC_1048_C_44100.sofa
-│   ├── IRC_1057_C_44100.sofa
-│   └── generic.sofa
+├── dataset/                          ← HRTFs IRCAM LISTEN (non versionnées)
+├── dataset_live/
+│   ├── Tchaikovsky/                  ← The Spheres dataset (non versionné)
+│   ├── channel_map_Tchaikovsky.json  ← stem → label position
+│   ├── mic_folder_map_Tchaikovsky.json ← dossier-micro → label position
+│   └── positions_phase1.json         ← positions 3D MDS des micros
 ├── src/
 │   ├── hrtf/
-│   │   ├── hrtf.py
-│   │   ├── hrtf_utils.py
-│   │   ├── HRTFInterpolator.py
-│   │   └── HRTFGen.py
 │   ├── engine/
-│   │   ├── Convolution.py
-│   │   ├── SegmentEngine.py
-│   │   ├── WOLAEngine.py
-│   │   └── DynamicConvolver.py
 │   ├── scene/
-│   │   ├── Soundsource.py
-│   │   ├── DistanceModel.py
-│   │   ├── Soundscape.py
-│   │   ├── DynamicSoundscape.py
-│   │   └── Trajectory.py
+│   ├── instrument/                   ← nouveau module The Spheres
 │   ├── synthesis/
-│   │   └── GenerateSound.py
 │   └── analysis/
-│       ├── SoundVisu.py
-│       ├── SpatialisationVerif.py
-│       └── visualisation.py
-├── sound/generated/
+├── sound/                            ← fichiers générés (non versionnés)
+├── docs/
+│   ├── hrtf_interpolation.tex
+│   └── hrtf_crossmodal.tex           ← architecture HRTF cross-modal (LaTeX)
 ├── notebooks/
+│   ├── Build_Tchaikovsky.ipynb       ← reconstruction scène orchestrale
 │   ├── static HRTF Demo.ipynb
 │   ├── DynamicConvolver_viz.ipynb
 │   ├── DynamicSoundscape_viz.ipynb
 │   ├── HRTFGen.ipynb
 │   ├── SegmentEngine_Viz.ipynb
 │   └── traj_viz.ipynb
-├── docs/
-│   └── hrtf_interpolation.tex
 ├── pyproject.toml
 └── Requirements.txt
 ```
@@ -341,7 +372,7 @@ son_spatialisation/
 |---|---|
 | `numpy` | Calcul numérique |
 | `scipy` | FFT, convolution, géométrie (ConvexHull), fenêtres WOLA |
-| `soundfile` | Lecture/écriture WAV |
+| `soundfile` | Lecture/écriture WAV/FLAC |
 | `netCDF4` | Lecture/écriture fichiers SOFA |
 | `matplotlib` | Visualisations |
 | `librosa` | Rééchantillonnage |
@@ -353,10 +384,12 @@ pip install -r Requirements.txt
 
 ---
 
-## Référence
+## Références
 
 Base de données IRCAM LISTEN :
 > UMR 9912 - STMS - IRCAM/CNRS/UPMC. *LISTEN HRTF Database* — Olivier Warusfel.
-> http://recherche.ircam.fr/equipes/salles/listen/
 
-Licence IRCAM : utilisation libre à des fins éducatives, de recherche ou commerciales. Toute reproduction doit inclure la notice de copyright IRCAM.
+Dataset The Spheres :
+> Gaultier, C. et al. *The Spheres: A Multichannel Database of Orchestral Music*. 2024.
+
+Licence IRCAM : utilisation libre à des fins éducatives, de recherche ou commerciales.
