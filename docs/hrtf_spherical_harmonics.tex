@@ -1,0 +1,383 @@
+\documentclass[12pt, a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{bm}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{mathtools}
+
+\geometry{margin=2.5cm}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!70!black,
+    citecolor=blue!70!black,
+}
+
+\newtheorem{proposition}{Proposition}
+\newtheorem{remarque}{Remarque}
+
+\title{%
+    \textbf{Représentation des HRTFs par Harmoniques Sphériques}\\[0.4em]
+    \large Formalisme mathématique et justification pour l'encodage cross-modal
+}
+\author{Mehdi Maqlach}
+\date{\today}
+
+% -----------------------------------------------------------------------
+\begin{document}
+\maketitle
+\tableofcontents
+\vspace{1em}
+
+% -----------------------------------------------------------------------
+\section{Introduction}
+
+Une \textit{Head-Related Transfer Function} (HRTF) caractérise la façon dont le son
+est filtré par la géométrie du corps humain — pavillon de l'oreille, tête, torse —
+avant d'atteindre le canal auditif. Formellement, pour un sujet donné, la HRTF est
+une fonction
+
+\begin{equation}
+    H : S^2 \times \mathbb{R}^+ \;\longrightarrow\; \mathbb{C}
+    \qquad
+    (\theta, \varphi, f) \;\longmapsto\; H(\theta, \varphi, f)
+\end{equation}
+
+où $(\theta, \varphi) \in S^2$ désigne la direction de la source sonore (azimut et
+élévation sur la sphère unité) et $f$ la fréquence.
+
+\medskip
+
+Dans les bases de données HRTF mesurées (e.g.\ HUTUBS, SONICOM), cette fonction
+est échantillonnée sur un ensemble fini de directions
+$\{(\theta_i, \varphi_i)\}_{i=1}^{N}$, dont le cardinal $N$ varie selon le protocole
+de mesure~: $N = 2114$, $2818$ ou $8802$ dans la base \textit{Database-Master V2-1}.
+Cette hétérogénéité empêche de représenter directement les HRTFs comme un tableau
+numpy de forme fixe, ce qui est un prérequis pour tout pipeline d'apprentissage
+automatique.
+
+\medskip
+
+Ce document présente la \textbf{décomposition en harmoniques sphériques} (SH) comme
+solution rigoureuse à ce problème : projeter la HRTF sur une base orthonormée de
+fonctions définies sur $S^2$, indépendante de la grille de mesure. La représentation
+obtenue est de taille fixe, compacte, et physiquement motivée.
+
+% -----------------------------------------------------------------------
+\section{Harmoniques sphériques}
+
+\subsection{Définition}
+
+Les harmoniques sphériques réelles d'ordre $l \geq 0$ et de degré $|m| \leq l$
+sont définies par~:
+
+\begin{equation}
+    Y_l^m(\theta, \varphi) =
+    \begin{cases}
+        \sqrt{2}\, K_l^m \cos(m\varphi)\, P_l^m(\cos\theta) & m > 0 \\
+        K_l^0\, P_l^0(\cos\theta)                            & m = 0 \\
+        \sqrt{2}\, K_l^{|m|} \sin(|m|\varphi)\, P_l^{|m|}(\cos\theta) & m < 0
+    \end{cases}
+\end{equation}
+
+où $P_l^m$ sont les polynômes de Legendre associés et
+
+\begin{equation}
+    K_l^m = \sqrt{\frac{(2l+1)}{4\pi} \frac{(l-|m|)!}{(l+|m|)!}}
+\end{equation}
+
+est la constante de normalisation. Pour un ordre de troncature $L$, le nombre total
+de fonctions de base est
+
+\begin{equation}
+    \boxed{N_{\mathrm{SH}}(L) = (L+1)^2}
+\end{equation}
+
+\subsection{Propriété fondamentale : orthonormalité}
+
+Les harmoniques sphériques forment une base orthonormée de $L^2(S^2)$~:
+
+\begin{equation}
+    \int_{S^2} Y_l^m(\omega)\, Y_{l'}^{m'}(\omega)\, \mathrm{d}\omega
+    = \delta_{ll'}\, \delta_{mm'}
+    \label{eq:ortho}
+\end{equation}
+
+Cette propriété est l'équivalent sphérique de l'orthogonalité des harmoniques
+de Fourier sur le cercle. Elle garantit que les coefficients de la décomposition
+sont \emph{décorrélés} : chaque coefficient capture une composante spatiale
+indépendante.
+
+\subsection{Complétude}
+
+Toute fonction de carré intégrable sur $S^2$ peut être approchée arbitrairement
+bien par une combinaison finie d'harmoniques sphériques~:
+
+\begin{equation}
+    H(\theta, \varphi, f) \;=\; \lim_{L \to \infty} \sum_{l=0}^{L} \sum_{m=-l}^{l}
+    a_l^m(f)\, Y_l^m(\theta, \varphi)
+    \label{eq:decomp}
+\end{equation}
+
+En pratique, les HRTFs sont des fonctions régulières sur $S^2$ (pas de
+discontinuité abrupte), ce qui assure une convergence rapide : un ordre $L$
+modéré suffit à capturer l'essentiel de l'information spatiale.
+
+% -----------------------------------------------------------------------
+\section{Décomposition d'une HRTF}
+
+\subsection{Problème discret}
+
+En pratique, on ne dispose que de $N$ mesures aux positions
+$\{\omega_i\}_{i=1}^{N}$.
+Pour une fréquence $f$ et une oreille données, on cherche les coefficients
+$\mathbf{a}(f) = [a_0^0(f),\, a_1^{-1}(f),\, a_1^0(f),\, \ldots,\,
+a_L^L(f)]^\top \in \mathbb{R}^{(L+1)^2}$
+qui minimisent l'erreur de reconstruction aux positions mesurées.
+
+On définit la \textbf{matrice de design} SH :
+
+\begin{equation}
+    \mathbf{Y} \;\in\; \mathbb{R}^{N \times (L+1)^2},
+    \qquad
+    \mathbf{Y}_{i,\,lm} = Y_l^m(\omega_i)
+\end{equation}
+
+et le vecteur de mesures (log-magnitude en dB) :
+
+\begin{equation}
+    \mathbf{h}(f) = \bigl[\hat{H}(\omega_1, f),\; \hat{H}(\omega_2, f),\;
+    \ldots,\; \hat{H}(\omega_N, f)\bigr]^\top \in \mathbb{R}^N
+\end{equation}
+
+Le système linéaire à résoudre est :
+
+\begin{equation}
+    \mathbf{Y}\, \mathbf{a}(f) = \mathbf{h}(f)
+    \label{eq:system}
+\end{equation}
+
+\subsection{Solution par moindres carrés}
+
+Lorsque $N > (L+1)^2$ (système sur-déterminé, ce qui est notre cas), la solution
+aux moindres carrés est donnée par la pseudo-inverse de Moore-Penrose~:
+
+\begin{equation}
+    \boxed{
+    \hat{\mathbf{a}}(f) = \mathbf{Y}^+ \mathbf{h}(f)
+    = \bigl(\mathbf{Y}^\top \mathbf{Y}\bigr)^{-1} \mathbf{Y}^\top\, \mathbf{h}(f)
+    }
+    \label{eq:lstsq}
+\end{equation}
+
+\begin{remarque}
+La matrice $\mathbf{Y}$ ne dépend \emph{que} des positions de mesure, pas des
+données HRTF. Elle est donc calculée \textbf{une seule fois} par sujet et
+réutilisée pour toutes les fréquences et les deux oreilles.
+\end{remarque}
+
+\subsection{Représentation finale}
+
+En appliquant \eqref{eq:lstsq} à chaque fréquence $f_k$ ($k = 1, \ldots, N_f$)
+et aux deux oreilles ($e \in \{L, R\}$), on obtient le tenseur de coefficients :
+
+\begin{equation}
+    \mathbf{A} \;\in\; \mathbb{R}^{(L+1)^2 \times N_f \times 2}
+\end{equation}
+
+Ce tenseur constitue la \textbf{représentation SH de la HRTF} du sujet.
+Sa taille est \emph{entièrement déterminée par le choix de $L$}, indépendamment
+du nombre $N$ de positions de mesure.
+
+\medskip
+
+\noindent Récapitulatif numérique pour notre base de données (FIR 256 taps,
+$f_s = 44100$\,Hz, donc $N_f = 129$)~:
+
+\begin{center}
+\begin{tabular}{ccccc}
+\toprule
+Ordre $L$ & $(L+1)^2$ & Shape $\mathbf{A}$ & Taille (float32) & Ratio vs.\ $N=2114$ \\
+\midrule
+3  & 16  & $[16,\;129,\;2]$  & 16\,kB  & $\times 0.008$ \\
+5  & 36  & $[36,\;129,\;2]$  & 37\,kB  & $\times 0.017$ \\
+10 & 121 & $[121,\;129,\;2]$ & 124\,kB & $\times 0.058$ \\
+20 & 441 & $[441,\;129,\;2]$ & 453\,kB & $\times 0.21$  \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% -----------------------------------------------------------------------
+\section{Justification pour l'apprentissage cross-modal}
+
+\subsection{Problème d'hétérogénéité résolu proprement}
+
+La décomposition SH est \textbf{la seule approche} qui résout le problème de
+grilles hétérogènes sans perte d'information et sans artefact~:
+
+\begin{itemize}
+    \item \textbf{Troncature} au minimum $N_\mathrm{min}$ : supprime des mesures
+    (perte d'information irréversible, ordre de troncature arbitraire).
+    \item \textbf{Moyenne spatiale} : réduction à une dimension, toute information
+    directionnelle détruite.
+    \item \textbf{Interpolation} sur grille commune : introduit des artefacts si
+    la densité de la grille source est insuffisante.
+    \item \textbf{Décomposition SH} : utilise \emph{toutes} les mesures disponibles
+    (D1 profite de ses 8802 points), produit une représentation de taille fixe,
+    et maximise la précision sous contrainte de compacité.
+\end{itemize}
+
+\subsection{Décorrélation des caractéristiques}
+
+L'orthogonalité \eqref{eq:ortho} garantit que les coefficients
+$a_l^m$ sont décorrélés entre eux : chaque coefficient capture une
+\emph{composante indépendante} de la variation spatiale. Cette propriété est
+favorable pour un encodeur de type MLP ou CNN, dont l'optimisation est facilitée
+par des entrées non corrélées.
+
+\subsection{Hiérarchie spatiale interprétable}
+
+Les harmoniques sphériques de bas ordre capturent les variations \textbf{globales}
+de la HRTF (différence gauche/droite, bas/haut), tandis que les ordres élevés
+encodent les détails \textbf{fins} du pavillon. Cette hiérarchie naturelle est
+cohérente avec l'objectif du modèle~: retrouver la signature spectrale d'une oreille
+depuis sa photo, qui contient justement ces niveaux de détail emboîtés.
+
+\subsection{Reconstruction parfaite et robustesse}
+
+Depuis les coefficients $\mathbf{A}$, on peut reconstruire la HRTF à
+\emph{n'importe quelle direction} $(\theta, \varphi)$ par~:
+
+\begin{equation}
+    \hat{H}(\theta, \varphi, f) = \sum_{l=0}^{L} \sum_{m=-l}^{l}
+    a_l^m(f)\, Y_l^m(\theta, \varphi)
+\end{equation}
+
+Cette propriété est utile en inférence~: une fois le modèle entraîné, il prédit
+$\mathbf{A}$ depuis la photo d'oreille, puis on synthétise la HRTF dans
+n'importe quelle direction pour la spatialisation binaural.
+
+\subsection{Lien avec l'acoustique physique}
+
+Les harmoniques sphériques sont les \textbf{solutions propres de l'équation de
+Laplace sur $S^2$}, et par extension les modes naturels de la propagation
+acoustique en champ libre. La décomposition SH d'une HRTF est donc
+\emph{physiquement motivée}~: elle sépare les contributions des différentes
+échelles spatiales de diffraction sur la tête et le pavillon. C'est aussi la base
+mathématique de l'Ambisonics, standard industriel de l'audio spatial.
+
+% -----------------------------------------------------------------------
+\section{Choix de l'ordre $L$}
+
+\subsection{Compromis précision / compacité}
+
+L'erreur de reconstruction décroît quand $L$ augmente. Pour les HRTFs, la
+littérature~\cite{Evans98, Zotkin09} montre qu'un ordre $L = 5$ à $L = 10$
+capture plus de 95\,\% de l'énergie spatiale.
+
+\subsection{Condition de Nyquist sphérique}
+
+Pour que la décomposition soit non-aliasée, il faut que le nombre de mesures
+$N$ vérifie~:
+
+\begin{equation}
+    N \;\geq\; (L+1)^2
+\end{equation}
+
+Avec $N_\mathrm{min} = 2114$ positions, on peut monter jusqu'à $L \approx 44$
+sans sous-détermination.
+
+\subsection{Recommandation pratique}
+
+Pour une première version du modèle cross-modal~:
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Contexte & Ordre recommandé \\
+\midrule
+Prototype rapide      & $L = 5$  $(36 \text{ coeff.})$ \\
+Version de référence  & $L = 10$ $(121 \text{ coeff.})$ \\
+Haute fidélité        & $L = 20$ $(441 \text{ coeff.})$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% -----------------------------------------------------------------------
+\section{Implémentation}
+
+En Python, la décomposition se résume à trois étapes~:
+
+\begin{enumerate}
+    \item Lire les positions $(\theta_i, \varphi_i)$ depuis le fichier SOFA.
+    \item Construire $\mathbf{Y}$ avec \texttt{scipy.special.sph\_harm}.
+    \item Résoudre $\mathbf{A} = \mathbf{Y}^+ \mathbf{H}$ avec
+          \texttt{numpy.linalg.lstsq}.
+\end{enumerate}
+
+La matrice $\mathbf{Y}^+$ est calculée une seule fois par sujet (coût
+$\mathcal{O}(N \cdot (L+1)^2)$), puis appliquée à toutes les fréquences
+simultanément par produit matriciel~:
+
+\begin{equation}
+    \mathbf{A} = \mathbf{Y}^+ \mathbf{H}
+    \qquad
+    \mathbf{H} \in \mathbb{R}^{N \times N_f \times 2}
+    \;\longrightarrow\;
+    \mathbf{A} \in \mathbb{R}^{(L+1)^2 \times N_f \times 2}
+\end{equation}
+
+% -----------------------------------------------------------------------
+\section{Conclusion}
+
+La décomposition en harmoniques sphériques offre une représentation des HRTFs~:
+\begin{itemize}
+    \item \textbf{de taille fixe} — $(L+1)^2 \times N_f \times 2$, indépendante de
+    la grille de mesure~;
+    \item \textbf{sans perte} — toutes les mesures contribuent à la solution des
+    moindres carrés~;
+    \item \textbf{physiquement motivée} — base propre de la propagation acoustique
+    sphérique~;
+    \item \textbf{interprétable} — hiérarchie ordre bas / ordre élevé cohérente avec
+    la géométrie du pavillon~;
+    \item \textbf{réversible} — reconstruction à n'importe quelle direction par
+    évaluation de la série tronquée.
+\end{itemize}
+
+Elle constitue donc le prétraitement le plus rigoureux pour alimenter un
+HRTFEncoder dans une architecture de retrieval cross-modal oreille $\leftrightarrow$
+HRTF.
+
+% -----------------------------------------------------------------------
+\begin{thebibliography}{9}
+
+\bibitem{Evans98}
+M.~A. Evans, J.~A. S. Angus, and A.~I. Tew,
+\textit{Analyzing head-related transfer function measurements using surface spherical harmonics},
+J.\ Acoust.\ Soc.\ Am., 104(4):2400--2411, 1998.
+
+\bibitem{Zotkin09}
+D.~N. Zotkin, R.~Duraiswami, and N.~A. Gumerov,
+\textit{Regularized HRTF fitting using spherical harmonics},
+in Proc.\ IEEE WASPAA, 2009.
+
+\bibitem{Rafaely15}
+B.~Rafaely,
+\textit{Fundamentals of Spherical Array Processing},
+Springer, 2015.
+
+\bibitem{Chen19}
+T.~Chen, S.\ Kornblith, M.\ Norouzi, and G.\ Hinton,
+\textit{A simple framework for contrastive learning of visual representations (SimCLR)},
+ICML, 2020.
+
+\end{thebibliography}
+
+\end{document}

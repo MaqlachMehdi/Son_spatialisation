@@ -1,5 +1,6 @@
 # Environnements virtuels
 .venv_spatial_son/
+.venv_ml/
 .venv/
 venv/
 env/
@@ -16,9 +17,11 @@ __pycache__/
 *.wav
 *.sofa
 *.npy
+*.npz
 sound/
 dataset_live/Tchaikovsky/
 dataset_live/TheSpheresDataset-RIRs/
+dataset/Database-Master_V2-1/
 
 # Historique d'édition VSCode
 .history/
