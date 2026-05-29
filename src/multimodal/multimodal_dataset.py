@@ -129,10 +129,10 @@ class MultimodalDataset:
             train_idx   = data['train_idx'],
             val_idx     = data['val_idx'],
             test_idx    = data['test_idx'],
-            train_mean  = float(data['train_mean']),
-            train_std   = float(data['train_std']),
+            train_mean  = float(data['train_mean'].flat[0]),
+            train_std   = float(data['train_std'].flat[0]),
             batch_size  = batch_size,
-            sh_order    = int(data['sh_order']),
+            sh_order    = int(data['sh_order'].flat[0]),
         )
 
     # ------------------------------------------------------------------

@@ -1,0 +1,14 @@
+artifact_uri: file:C:/son_spatialisation/checkpoints/mlruns/309081838394189877/0a96a42d060044bab7674d8608835f4e/artifacts
+end_time: 1780047347422
+entry_point_name: ''
+experiment_id: '309081838394189877'
+lifecycle_stage: active
+run_id: 0a96a42d060044bab7674d8608835f4e
+run_name: exp_temp007_bs8_2d83030a
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1780047258842
+status: 3
+tags: []
+user_id: SPM2

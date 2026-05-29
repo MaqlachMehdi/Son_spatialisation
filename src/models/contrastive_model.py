@@ -25,9 +25,18 @@ class ContrastiveModel(tf.keras.Model):
         temperature: float = 0.07,
     ) -> None:
         super().__init__()
-        self.ear_model   = ear_encoder.model
-        self.hrtf_model  = hrtf_encoder.model
-        self.temperature = temperature
+        self.ear_model    = ear_encoder.model
+        self.hrtf_model   = hrtf_encoder.model
+        self.temperature  = temperature
+        self.loss_tracker = tf.keras.metrics.Mean(name='loss')
+
+    # ------------------------------------------------------------------
+    # Métriques — pattern Keras recommandé pour les boucles custom
+    # ------------------------------------------------------------------
+
+    @property
+    def metrics(self):
+        return [self.loss_tracker]
 
     # ------------------------------------------------------------------
     # Forward pass
@@ -55,10 +64,13 @@ class ContrastiveModel(tf.keras.Model):
         grads = tape.gradient(loss, self.trainable_weights)
         self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
 
-        return {'loss': loss}
+        self.loss_tracker.update_state(loss)
+        return {m.name: m.result() for m in self.metrics}
 
     def test_step(self, data):
         inputs, _ = data
         z_ear, z_hrtf = self(inputs, training=False)
         loss = nt_xent_loss(z_ear, z_hrtf, self.temperature)
-        return {'val_loss': loss}
+
+        self.loss_tracker.update_state(loss)
+        return {m.name: m.result() for m in self.metrics}
