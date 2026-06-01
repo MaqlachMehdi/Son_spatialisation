@@ -63,9 +63,11 @@ class Trainer:
         experiment:   str             = 'default',
         dataset_path: str | Path | None = None,
         base_dir:     str | Path      = 'checkpoints/',
+        dataset       = None,   # MultimodalDataset — active RecallCallback si fourni
     ) -> None:
         self._model      = model
         self._enc_ear    = ear_encoder
+        self._dataset    = dataset
         self._experiment = experiment
         self._ds_hash    = _dataset_hash(dataset_path) if dataset_path else 'nohash'
 
@@ -82,13 +84,16 @@ class Trainer:
         try:
             import mlflow
 
-            mlflow.set_tracking_uri(f"sqlite:///{Path(base_dir) / 'mlruns.db'}")
+            mlflow.set_tracking_uri(
+                f"sqlite:///{Path(base_dir).resolve() / 'mlruns.db'}"
+            )
             mlflow.set_experiment(experiment)
             self._run = mlflow.start_run(run_name=exp_name)
             mlflow.log_params({
                 'experiment'  : experiment,
                 'dataset_hash': self._ds_hash,
                 'temperature' : float(model.temperature),
+                'supervised'  : getattr(model, 'supervised', False),
             })
             self._mlflow_active = True
             print(f'  MLflow run ID   : {self._run.info.run_id}')
@@ -96,6 +101,8 @@ class Trainer:
         except ImportError:
             print('  MLflow non installé — versioning désactivé.')
             print('  Pour activer : pip install mlflow\n')
+        except Exception as e:
+            print(f'  MLflow non disponible ({e}) — versioning désactivé.')
 
         print(f'  Expérience      : {exp_name}')
         print(f'  Répertoire      : {self._save_dir}')
@@ -149,6 +156,12 @@ class Trainer:
         self._history['val_loss'] += h.history[val_key] if val_key else []
         self._history['phase']    += [phase] * n_epochs_ran
 
+        # Rapport de validation après chaque phase
+        if self._dataset is not None:
+            from src.evaluation import ValidationReport
+            report = ValidationReport(self._model, self._dataset)
+            report.run(phase=phase, log_mlflow=self._mlflow_active)
+
         best_val = min(h.history[val_key]) if val_key else float('nan')
         print(f'\n  Phase {phase} terminée — {n_epochs_ran} epochs')
         print(f'  Meilleure val_loss : {best_val:.4f}')
@@ -180,9 +193,9 @@ class Trainer:
         if self._mlflow_active:
             import mlflow
             mlflow.log_metric(f'phase{phase}_best_val_loss', best_val)
-            mlflow.log_artifact(str(config_path))
+            mlflow.log_artifact(str(config_path.resolve()))
             if weights_path.exists():
-                mlflow.log_artifact(str(weights_path))
+                mlflow.log_artifact(str(weights_path.resolve()))
 
         print(f'  Config sauvegardée → {config_path}')
 
@@ -195,7 +208,17 @@ class Trainer:
         if self._mlflow_active:
             import mlflow
             mlflow.end_run()
+            self._mlflow_active = False
             print(f'  Run MLflow fermé — ID : {self._run.info.run_id}')
+
+    def __del__(self) -> None:
+        """Ferme le run MLflow si end() n'a pas été appelé explicitement."""
+        if getattr(self, '_mlflow_active', False):
+            try:
+                import mlflow
+                mlflow.end_run()
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------
     # Callbacks  (TensorBoard + MLflow + EarlyStopping + ...)
@@ -205,11 +228,20 @@ class Trainer:
         import tensorflow as tf
         from tqdm.keras import TqdmCallback
 
-        checkpoint_path = str(self._save_dir / f'phase{phase}_best.weights.h5')
-        log_dir         = str(self._save_dir / 'logs' / f'phase{phase}')
+        checkpoint_path = (self._save_dir / f'phase{phase}_best.weights.h5').as_posix()
+        log_dir         = (self._save_dir / 'logs' / f'phase{phase}').as_posix()
         epoch_offset    = len(self._history['loss'])
 
         callbacks = [TqdmCallback(verbose=1)]
+
+        # RecallCallback — uniquement si le dataset est fourni
+        if self._dataset is not None:
+            from src.evaluation.recall_callback import RecallCallback
+            callbacks.append(RecallCallback(
+                model       = self._model,
+                dataset     = self._dataset,
+                log_mlflow  = self._mlflow_active,
+            ))
 
         # MLflow — logue métriques epoch par epoch
         if self._mlflow_active:

@@ -171,6 +171,17 @@ class MultimodalDataset:
     def test(self):
         return self._make_ds(self.test_idx)
 
+    def _base_labels(self, idx: np.ndarray) -> np.ndarray:
+        """Entiers de label groupant les versions augmentées du même sujet.
+
+        H10, H10_mirror, H10_aug1 → même entier.
+        Utilisé par la Supervised Contrastive Loss.
+        """
+        base_ids    = [self.subject_ids[i].split('_')[0] for i in idx]
+        unique      = sorted(set(base_ids))
+        base_to_int = {b: k for k, b in enumerate(unique)}
+        return np.array([base_to_int[b] for b in base_ids], dtype=np.int32)
+
     def _make_ds(self, idx: np.ndarray, shuffle: bool = False):
         import tensorflow as tf  # import paresseux : TF requis seulement ici
         ds = tf.data.Dataset.from_tensor_slices((
@@ -179,7 +190,7 @@ class MultimodalDataset:
                 'ear_right': self._img_R[idx].astype(np.float32),
                 'hrtf':      self._hrtf[idx].astype(np.float32),
             },
-            np.arange(len(idx), dtype=np.int32),
+            self._base_labels(idx),   # labels = base sujet (pas séquentiels)
         ))
         if shuffle:
             ds = ds.shuffle(buffer_size=len(idx), reshuffle_each_iteration=True)
