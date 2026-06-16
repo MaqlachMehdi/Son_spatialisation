@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import tensorflow as tf
 
 
 def _base_id(subject_id: str) -> str:
@@ -8,7 +9,7 @@ def _base_id(subject_id: str) -> str:
     return subject_id.split('_')[0]
 
 
-class RecallCallback:
+class RecallCallback(tf.keras.callbacks.Callback):
     """Callback Keras : calcule Recall@1 sur le val set à chaque epoch.
 
       Note sur le data leakage partiel :
@@ -29,19 +30,11 @@ class RecallCallback:
         log_mlflow:  bool = True,
         batch_size:  int  = 16,
     ) -> None:
-        self._model      = model
+        super().__init__()
+        self._contrastive_model = model
         self._dataset    = dataset
         self._log_mlflow = log_mlflow
         self._batch_size = batch_size
-
-    # Keras callback interface
-    def set_model(self, model):   pass
-    def set_params(self, params): pass
-    def on_train_begin(self, logs=None): pass
-    def on_train_end(self, logs=None):   pass
-    def on_batch_begin(self, batch, logs=None): pass
-    def on_batch_end(self, batch, logs=None):   pass
-    def on_epoch_begin(self, epoch, logs=None): pass
 
     def on_epoch_end(self, epoch, logs=None) -> None:
         import tensorflow as tf
@@ -56,7 +49,7 @@ class RecallCallback:
         z_hrtf_list = []
         for start in range(0, len(train_idx), self._batch_size):
             batch = tf.constant(hrtf_norm[start:start + self._batch_size])
-            z     = self._model.hrtf_model(batch, training=False)
+            z     = self._contrastive_model.hrtf_model(batch, training=False)
             z_hrtf_list.extend(z.numpy())
         z_hrtf_train = np.array(z_hrtf_list, dtype=np.float32)
 
@@ -74,7 +67,7 @@ class RecallCallback:
                 'ear_left':  tf.constant(ear_L[start:start + self._batch_size]),
                 'ear_right': tf.constant(ear_R[start:start + self._batch_size]),
             }
-            z = self._model.ear_model(batch, training=False)
+            z = self._contrastive_model.ear_model(batch, training=False)
             z_ear_list.extend(z.numpy())
         z_ear_val = np.array(z_ear_list, dtype=np.float32)
 
