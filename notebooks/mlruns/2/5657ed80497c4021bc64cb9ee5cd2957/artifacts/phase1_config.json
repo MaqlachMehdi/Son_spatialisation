@@ -1,0 +1,10 @@
+{
+  "experiment": "gradcam_evolution",
+  "dataset_hash": "2d83030a",
+  "phase": 1,
+  "epochs_ran": 5,
+  "best_val_loss": 1.24603,
+  "lr": 0.001,
+  "temperature": 0.07,
+  "timestamp": "2026-06-18T16:08:12"
+}

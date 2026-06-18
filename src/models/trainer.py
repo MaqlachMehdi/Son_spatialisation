@@ -22,8 +22,9 @@ def _make_mlflow_callback(epoch_offset: int = 0):
         def on_epoch_end(self, epoch, logs=None) -> None:
             import mlflow
             if logs:
+                # MLflow n'accepte pas '@' dans les noms de métriques
                 mlflow.log_metrics(
-                    {k: float(v) for k, v in logs.items()},
+                    {k.replace("@", "_at_"): float(v) for k, v in logs.items()},
                     step=epoch_offset + epoch,
                 )
 
@@ -113,10 +114,11 @@ class Trainer:
 
     def run_phase(
         self,
-        phase:    int,
+        phase:           int,
         train_ds,
         val_ds,
-        epochs:   int,
+        epochs:          int,
+        extra_callbacks: list | None = None,
     ) -> None:
         import tensorflow as tf
 
@@ -139,11 +141,15 @@ class Trainer:
             optimizer=tf.keras.optimizers.Adam(_LR_PER_PHASE[phase])
         )
 
+        callbacks = self._make_callbacks(phase)
+        if extra_callbacks:
+            callbacks = extra_callbacks + callbacks
+
         h = self._model.fit(
             train_ds,
             validation_data = val_ds,
             epochs          = epochs,
-            callbacks       = self._make_callbacks(phase),
+            callbacks       = callbacks,
             verbose         = 0,
         )
 
