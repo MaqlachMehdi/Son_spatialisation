@@ -24,3 +24,8 @@ python-sofa
 librosa>=0.10.0
 
 xarray>=2023.2.0
+
+# API web (GUI React/Three.js de positionnement spatial)
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
