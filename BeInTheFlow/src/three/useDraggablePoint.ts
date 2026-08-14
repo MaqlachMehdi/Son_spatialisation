@@ -14,6 +14,12 @@ type DragMode = "none" | "ground" | "elevation";
 // Drag libre d'un point dans l'espace (sol horizontal + flèche d'élévation),
 // exactement comme une source (cf. SourceNode.tsx). Réutilisé pour toute
 // poignée 3D qui représente une position complète (azimut+élévation+distance).
+//
+// onChange/onDragStateChange sont lus via une ref tenue à jour à chaque
+// render (plutôt que dans les deps de l'effet) : sinon, comme ce sont des
+// closures recréées à chaque render côté appelant, l'effet retirerait et
+// rattacherait les listeners DOM à chaque updateTrajectory pendant un drag
+// (donc à chaque pointermove) — inutile et coûteux.
 export function useDraggablePoint(
   worldPos: Vec3,
   onChange: (v: SofaValue) => void,
@@ -28,9 +34,14 @@ export function useDraggablePoint(
   const intersection = useRef(new THREE.Vector3()).current;
   const UP = useRef(new THREE.Vector3(0, 1, 0)).current;
 
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const onDragStateChangeRef = useRef(onDragStateChange);
+  onDragStateChangeRef.current = onDragStateChange;
+
   const apply = (point: THREE.Vector3) => {
     const { azimuth, elevation, distance } = threeToSofa(point);
-    onChange({
+    onChangeRef.current({
       azimuth: Math.round(azimuth * 10) / 10,
       elevation: Math.round(elevation * 10) / 10,
       distance: Math.round(distance * 100) / 100,
@@ -41,7 +52,7 @@ export function useDraggablePoint(
     e.stopPropagation();
     dragPlane.setFromNormalAndCoplanarPoint(UP, new THREE.Vector3(worldPos.x, worldPos.y, worldPos.z));
     dragMode.current = "ground";
-    onDragStateChange(true);
+    onDragStateChangeRef.current(true);
     gl.domElement.setPointerCapture(e.pointerId);
   };
 
@@ -49,7 +60,7 @@ export function useDraggablePoint(
     e.stopPropagation();
     startWorldPos.current.set(worldPos.x, worldPos.y, worldPos.z);
     dragMode.current = "elevation";
-    onDragStateChange(true);
+    onDragStateChangeRef.current(true);
     gl.domElement.setPointerCapture(e.pointerId);
   };
 
@@ -93,7 +104,7 @@ export function useDraggablePoint(
     const handleUp = (e: PointerEvent) => {
       if (dragMode.current === "none") return;
       dragMode.current = "none";
-      onDragStateChange(false);
+      onDragStateChangeRef.current(false);
       dom.releasePointerCapture(e.pointerId);
     };
 
@@ -103,8 +114,7 @@ export function useDraggablePoint(
       dom.removeEventListener("pointermove", handleMove);
       dom.removeEventListener("pointerup", handleUp);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [camera, gl, onChange, onDragStateChange]);
+  }, [camera, gl]);
 
   return { handleGroundDown, handleElevationDown };
 }

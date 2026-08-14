@@ -114,6 +114,10 @@ export default function TrajectoryInspector({ trajectory }: TrajectoryInspectorP
 
       {numberField("speed", "Vitesse (×)", 0.1, 0.1, 5)}
 
+      <button className="add-btn" onClick={() => patch({ reverse: !trajectory.reverse })}>
+        {trajectory.reverse ? "⇄ Sens inversé" : "⇄ Inverser le sens"}
+      </button>
+
       {(trajectory.type === "circular" || trajectory.type === "elliptical") && (
         <>
           {trajectory.type === "elliptical" && (

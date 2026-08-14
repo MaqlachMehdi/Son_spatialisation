@@ -1,10 +1,12 @@
-import { useEffect, useRef } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { useThree, type ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
 import { Html } from "@react-three/drei";
 import type { SoundSourceDTO } from "../types";
 import { sofaToThree, threeToSofa } from "../utils/sofaCoords";
 import { useSceneStore } from "../store/sceneStore";
+import { getInstrument } from "./instrumentCatalog";
+import InstrumentModel from "./InstrumentModel";
 
 interface SourceNodeProps {
   source: SoundSourceDTO;
@@ -26,6 +28,7 @@ export default function SourceNode({ source, selected, onSelect, onDragStateChan
   const { camera, gl } = useThree();
   const updateSource = useSceneStore((s) => s.updateSource);
   const pos = sofaToThree(source.azimuth, source.elevation, source.distance);
+  const instrument = getInstrument(source.modelId);
   const dragMode = useRef<DragMode>("none");
   const startWorldPos = useRef(new THREE.Vector3());
 
@@ -119,10 +122,29 @@ export default function SourceNode({ source, selected, onSelect, onDragStateChan
 
   return (
     <group position={[pos.x, pos.y, pos.z]}>
-      <mesh onPointerDown={handleGroundPointerDown}>
+      <mesh onPointerDown={handleGroundPointerDown} visible={!instrument}>
         <sphereGeometry args={[0.15, 24, 24]} />
-        <meshStandardMaterial color={source.color} transparent opacity={selected ? 1 : 0.75} />
+        <meshStandardMaterial
+          color={source.color}
+          transparent
+          opacity={source.muted ? 0.3 : selected ? 1 : 0.75}
+        />
       </mesh>
+
+      {instrument && (
+        <>
+          {/* Zone de préhension invisible (même geste que le cercle) : le modèle
+              lui-même ignore le raycast pour éviter les surprises de hit-test
+              sur des maillages complexes. */}
+          <mesh onPointerDown={handleGroundPointerDown} visible={false}>
+            <sphereGeometry args={[0.2, 12, 12]} />
+            <meshBasicMaterial />
+          </mesh>
+          <Suspense fallback={null}>
+            <InstrumentModel entry={instrument} position={pos} selected={selected} />
+          </Suspense>
+        </>
+      )}
 
       {selected && (
         <>

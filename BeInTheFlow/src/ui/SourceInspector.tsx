@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { SoundSourceDTO, SoundAsset } from "../types";
 import { useSceneStore } from "../store/sceneStore";
 import { fetchSounds } from "../utils/api";
+import { INSTRUMENT_CATALOG, UNAVAILABLE_INSTRUMENTS } from "../three/instrumentCatalog";
 
 interface SourceInspectorProps {
   source: SoundSourceDTO;
@@ -68,6 +69,26 @@ export default function SourceInspector({ source }: SourceInspectorProps) {
             ))}
           </select>
         )}
+      </label>
+
+      <label className="field">
+        <span>Modèle 3D</span>
+        <select
+          value={source.modelId ?? ""}
+          onChange={(e) => updateSource(source.id, { modelId: e.target.value || null })}
+        >
+          <option value="">Cercle (par défaut)</option>
+          {INSTRUMENT_CATALOG.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+          {UNAVAILABLE_INSTRUMENTS.map((m) => (
+            <option key={m.id} value="" disabled>
+              {m.label}
+            </option>
+          ))}
+        </select>
       </label>
 
       {field("azimuth", "Azimut (°)", 1, 0, 360)}

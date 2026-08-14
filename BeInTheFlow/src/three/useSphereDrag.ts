@@ -13,6 +13,9 @@ interface SofaValue {
 // l'auditeur (ex: poignées d'amplitude d'une ellipse). Contrairement à
 // useDraggablePoint, la distance ne change jamais — seule la direction
 // (azimut/élévation) varie.
+//
+// onChange/onDragStateChange sont lus via une ref (cf. useDraggablePoint)
+// pour ne pas ré-attacher les listeners DOM à chaque pointermove.
 export function useSphereDrag(
   radius: number,
   onChange: (v: SofaValue) => void,
@@ -25,12 +28,17 @@ export function useSphereDrag(
   const ndc = useRef(new THREE.Vector2()).current;
   const intersection = useRef(new THREE.Vector3()).current;
 
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const onDragStateChangeRef = useRef(onDragStateChange);
+  onDragStateChangeRef.current = onDragStateChange;
+
   const handleDown = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
     sphere.center.set(0, 0, 0);
     sphere.radius = radius;
     dragging.current = true;
-    onDragStateChange(true);
+    onDragStateChangeRef.current(true);
     gl.domElement.setPointerCapture(e.pointerId);
   };
 
@@ -47,7 +55,7 @@ export function useSphereDrag(
 
       if (raycaster.ray.intersectSphere(sphere, intersection)) {
         const { azimuth, elevation, distance } = threeToSofa(intersection);
-        onChange({
+        onChangeRef.current({
           azimuth: Math.round(azimuth * 10) / 10,
           elevation: Math.round(elevation * 10) / 10,
           distance: Math.round(distance * 100) / 100,
@@ -58,7 +66,7 @@ export function useSphereDrag(
     const handleUp = (e: PointerEvent) => {
       if (!dragging.current) return;
       dragging.current = false;
-      onDragStateChange(false);
+      onDragStateChangeRef.current(false);
       dom.releasePointerCapture(e.pointerId);
     };
 
@@ -68,8 +76,7 @@ export function useSphereDrag(
       dom.removeEventListener("pointermove", handleMove);
       dom.removeEventListener("pointerup", handleUp);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [camera, gl, onChange, onDragStateChange]);
+  }, [camera, gl]);
 
   return { handleDown };
 }

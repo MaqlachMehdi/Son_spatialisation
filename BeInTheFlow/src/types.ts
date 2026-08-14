@@ -9,6 +9,8 @@ export interface SoundSourceDTO {
   gain: number;      // gain linéaire
   color: string;
   trajectoryId?: string | null;
+  modelId?: string | null; // id du modèle 3D (InstrumentCatalog) affiché à la place du cercle, null = cercle par défaut
+  muted: boolean;
 }
 
 // Types de trajectoires — mêmes concepts que src/scene/Trajectory.py
@@ -37,6 +39,10 @@ export interface TrajectoryDTO {
   // vitesse par défaut). Utilisé par la lecture animée (TrajectoryPlayer).
   speed: number;
 
+  // Inverse le sens de parcours (utilisé par trajectoryPointAt uniquement —
+  // n'affecte pas le tracé du pointillé, qui est le même dans les deux sens).
+  reverse: boolean;
+
   // "circular" uniquement — orientation de l'axe (pôle) du cercle, permet de
   // l'incliner librement au lieu de le forcer parallèle au sol.
   // Défaut (0°, 90°) = axe vertical = cercle horizontal, comme avant.
@@ -57,13 +63,26 @@ export interface SoundAsset {
   path: string;
 }
 
+export interface HrtfAsset {
+  id: string;
+  label: string;
+  path: string;
+  active: boolean;
+}
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  isActive: boolean;
+  isVerified: boolean;
+  displayName: string | null;
+}
+
+// Même forme que SourcePayload / TrajectoryPayload côté serveur
+// (src/api/schemas/render.py) — la scène complète, sources + trajectoires,
+// pour que le rendu serveur puisse suivre les mêmes déplacements que
+// l'aperçu 3D (cf. SceneTrajectory côté Python).
 export interface RenderRequest {
-  sources: {
-    path: string;
-    azimuth: number;
-    elevation: number;
-    distance: number;
-    gain: number;
-    label: string;
-  }[];
+  sources: SoundSourceDTO[];
+  trajectories: TrajectoryDTO[];
 }

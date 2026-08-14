@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Grid } from "@react-three/drei";
+import { registerOrbitControls } from "../utils/cameraControl";
 import ListenerHead from "./ListenerHead";
 import ReferenceSphere from "./ReferenceSphere";
 import SourceNode from "./SourceNode";
@@ -24,12 +25,12 @@ export default function SceneCanvas() {
   const selectedTrajectory = trajectories.find((t) => t.id === selectedTrajectoryId) ?? null;
 
   return (
-    <Canvas camera={{ position: [0, 2.5, -5], fov: 50 }}>
+    <Canvas camera={{ position: [0, 0, -5], fov: 50 }}>
       <ambientLight intensity={0.6} />
       <pointLight position={[5, 5, 5]} intensity={0.8} />
       <pointLight position={[-5, 3, -5]} intensity={0.4} />
 
-      <OrbitControls enabled={!isDragging} makeDefault />
+      <OrbitControls ref={registerOrbitControls} target={[0, 0, 0]} enabled={!isDragging} makeDefault />
       <Grid
         args={[10, 10]}
         position={[0, -1.2, 0]}

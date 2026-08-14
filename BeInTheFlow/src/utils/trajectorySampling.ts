@@ -10,7 +10,8 @@ const ELLIPTICAL_SEGMENTS = 72;
 // pointillé (sampleTrajectory) et pour animer une source (TrajectoryPlayer)
 // — garantit que la source suit exactement la ligne affichée.
 export function trajectoryPointAt(trajectory: TrajectoryDTO, t: number): Vec3 {
-  const u = ((t % 1) + 1) % 1;
+  const forward = ((t % 1) + 1) % 1;
+  const u = trajectory.reverse ? 1 - forward : forward;
 
   switch (trajectory.type) {
     case "circular": {

@@ -2,7 +2,8 @@
 server.py
 ---------
 API FastAPI qui expose le pipeline de spatialisation binaurale existant
-(HRTFInterpolator, SoundSource, Soundscape) au frontend React/Three.js.
+(HRTFInterpolator, SoundSource, Soundscape) au frontend React/Three.js, et
+les comptes utilisateurs (fastapi-users) en vue de la persistance des scènes.
 
 Lancement (depuis n'importe quel répertoire) :
     python -m uvicorn api.server:app --reload --port 8000 --app-dir src
@@ -10,7 +11,7 @@ Lancement (depuis n'importe quel répertoire) :
 
 from __future__ import annotations
 
-import io
+import os
 import sys
 from pathlib import Path
 
@@ -24,91 +25,37 @@ if str(_ROOT / "src") not in sys.path:
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-import os
+from dotenv import load_dotenv
 
-import soundfile as sf
-from fastapi import FastAPI, HTTPException
+load_dotenv(_ROOT / ".env")
+
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 
 from hrtf import HRTF, HRTFInterpolator
-from scene import SoundSource, Soundscape
 
-SOUND_DIR = _ROOT / "sound"
-SOFA_PATH = Path(os.environ.get("HRTF_SOFA_PATH", _ROOT / "dataset" / "generic.sofa"))
-AUDIO_EXTENSIONS = (".wav", ".flac")
+from .auth import auth_router
+from .config import SOFA_PATH
+from .routers import hrtfs, render, sounds, workspace
 
 app = FastAPI(title="Spatialisation HRTF API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[os.environ.get("FRONTEND_ORIGIN", "http://localhost:5173")],
+    # Requis pour que le cookie de session (httpOnly) passe en cross-origin
+    # entre le frontend (5173) et cette API (8000).
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 print(f"[api] Chargement HRTF depuis {SOFA_PATH} …")
-_hrtf = HRTF.from_sofa(SOFA_PATH)
-_interpolator = HRTFInterpolator(_hrtf, verbose=False)
+app.state.interpolator = HRTFInterpolator(HRTF.from_sofa(SOFA_PATH), verbose=False)
 print("[api] HRTFInterpolator prêt.")
 
-
-class SourcePayload(BaseModel):
-    path: str
-    azimuth: float
-    elevation: float
-    distance: float = 2.06
-    gain: float = 1.0
-    label: str = ""
-
-
-class RenderRequest(BaseModel):
-    sources: list[SourcePayload]
-
-
-class SoundAsset(BaseModel):
-    id: str
-    label: str
-    path: str
-
-
-@app.get("/sounds", response_model=list[SoundAsset])
-def list_sounds() -> list[SoundAsset]:
-    if not SOUND_DIR.exists():
-        return []
-    assets = []
-    for file in sorted(SOUND_DIR.rglob("*")):
-        if file.suffix.lower() not in AUDIO_EXTENSIONS:
-            continue
-        rel = file.relative_to(SOUND_DIR).as_posix()
-        assets.append(SoundAsset(id=rel, label=file.stem, path=rel))
-    return assets
-
-
-@app.post("/render")
-def render(request: RenderRequest) -> StreamingResponse:
-    if not request.sources:
-        raise HTTPException(status_code=400, detail="Aucune source fournie.")
-
-    soundscape = Soundscape(_interpolator)
-    for src in request.sources:
-        full_path = SOUND_DIR / src.path
-        if not full_path.is_file():
-            raise HTTPException(status_code=404, detail=f"Fichier introuvable : {src.path}")
-        soundscape.add_source(
-            SoundSource(
-                azimuth=src.azimuth,
-                elevation=src.elevation,
-                distance=src.distance,
-                gain=src.gain,
-                path=str(full_path),
-            )
-        )
-
-    mix = soundscape.render()  # (N, 2) float32
-
-    buf = io.BytesIO()
-    sf.write(buf, mix, _interpolator.sample_rate, format="WAV")
-    buf.seek(0)
-    return StreamingResponse(buf, media_type="audio/wav")
+app.include_router(auth_router)
+app.include_router(sounds.router)
+app.include_router(hrtfs.router)
+app.include_router(render.router)
+app.include_router(workspace.router)

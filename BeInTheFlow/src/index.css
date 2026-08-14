@@ -17,6 +17,9 @@
   --play-bg: #6f2232;      /* Red_Dark */
   --play-bg-hover: #950740; /* Red_Medium */
 
+  --stop-bg: #4a1220;       /* Red_Dark, encore plus foncé que play-bg */
+  --stop-bg-hover: #5c1729;
+
   --error: #ffb454;
 }
 

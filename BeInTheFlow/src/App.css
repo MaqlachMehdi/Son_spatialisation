@@ -10,6 +10,38 @@
   inset: 0;
 }
 
+/* ── Visualiseur d'onde (glow dark_red, bas d'écran) ──────────────────── */
+
+.waveform-dock {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  width: 50%;
+  height: 100px;
+  pointer-events: none;
+  z-index: 15;
+}
+
+.waveform-box {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: 1.5px solid #ff2b4d;
+  border-radius: 14px;
+  box-shadow:
+    0 0 10px 1px rgba(255, 43, 77, 0.6),
+    0 0 26px 6px rgba(139, 0, 0, 0.4),
+    inset 0 0 18px rgba(255, 43, 77, 0.1);
+  overflow: hidden;
+}
+
+.waveform-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
 /* ── Dock flottant (bouton + panneau) ─────────────────────────────────── */
 
 .sidebar-dock {
@@ -65,6 +97,101 @@
   right: auto;
   left: 24px;
   align-items: flex-start;
+  top: 320px; /* dégage le panneau réglages (plus haut que la top-bar) */
+}
+
+/* ── Réglages (haut gauche, pendant de la top-bar) ────────────────────── */
+
+.settings-toggle {
+  color: var(--text);
+}
+
+.settings-toggle:hover {
+  color: var(--accent);
+}
+
+.settings-dock {
+  position: fixed;
+  top: 24px;
+  left: 24px;
+  z-index: 20;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.settings-panel {
+  width: 300px;
+  background: var(--panel);
+  border: 5px solid var(--accent);
+  border-radius: 18px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease, border-width 0.35s ease;
+}
+
+.settings-panel.collapsed {
+  width: 0;
+  height: 0; /* sinon le panneau invisible reste haut et masque les docks en dessous */
+  border-width: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.settings-panel-inner {
+  width: 300px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.settings-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+/* ── Compte (haut centre) ──────────────────────────────────────────────── */
+
+.account-dock {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.account-tabs {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.account-tab {
+  flex: 1;
+  background: none;
+  border: 1px solid var(--input-border);
+  color: var(--text-dim);
+  border-radius: 6px;
+  padding: 0.4rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.account-tab.active {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--accent-soft);
+}
+
+.account-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
 }
 
 /* ── Panneau ───────────────────────────────────────────────────────────── */
@@ -179,6 +306,25 @@
   color: var(--accent);
 }
 
+.mute-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 0.25rem;
+  display: flex;
+  align-items: center;
+}
+
+.mute-btn:hover {
+  color: var(--text);
+}
+
+.mute-btn[aria-pressed="true"] {
+  color: var(--accent);
+}
+
 .add-btn {
   margin-top: 0.25rem;
   background: none;
@@ -193,6 +339,12 @@
 .add-btn:hover {
   border-color: var(--accent);
   color: var(--text);
+}
+
+a.add-btn {
+  display: block;
+  text-align: center;
+  text-decoration: none;
 }
 
 .inspector {
@@ -271,8 +423,13 @@
   margin-top: 0.5rem;
 }
 
+.play-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
 .play-btn {
-  width: 100%;
+  flex: 4 1 0;
   background: var(--play-bg);
   color: var(--text);
   border: none;
@@ -291,6 +448,36 @@
 .play-btn:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* 1/4 de la largeur du bouton Play (flex 1 contre 4), même hauteur. */
+.stop-btn {
+  flex: 1 1 0;
+  background: var(--stop-bg);
+  color: var(--text);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+
+.stop-btn:hover {
+  background: var(--stop-bg-hover);
+}
+
+.stop-icon {
+  display: flex;
+  gap: 3px;
+}
+
+.stop-icon span {
+  width: 3px;
+  height: 12px;
+  background: currentColor;
+  border-radius: 1px;
 }
 
 .error {

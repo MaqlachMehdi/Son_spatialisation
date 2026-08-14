@@ -29,3 +29,10 @@ xarray>=2023.2.0
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 python-multipart>=0.0.9
+
+# Base de données (comptes utilisateurs, puis scènes/sources/trajectoires)
+sqlalchemy>=2.0.30
+asyncpg>=0.29.0
+alembic>=1.13.0
+fastapi-users[sqlalchemy]>=13.0.0
+python-dotenv>=1.0.1

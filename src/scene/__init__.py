@@ -10,6 +10,7 @@ from .Trajectory import (
     CustomTrajectory,
     RectilinearTrajectory,
 )
+from .SceneTrajectory import SceneTrajectory
 
 __all__ = [
     "SoundSource",
@@ -22,4 +23,5 @@ __all__ = [
     "LinearTrajectory",
     "CustomTrajectory",
     "RectilinearTrajectory",
+    "SceneTrajectory",
 ]
