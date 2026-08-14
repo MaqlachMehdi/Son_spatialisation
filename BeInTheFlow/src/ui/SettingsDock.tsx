@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSettingsStore } from "../store/settingsStore";
-import { fetchHrtfs } from "../utils/api";
+import { fetchHrtfs, setActiveHrtf } from "../utils/api";
 import { resetCamera } from "../utils/cameraControl";
 import type { HrtfAsset } from "../types";
 
@@ -40,6 +40,7 @@ export default function SettingsDock() {
   const [collapsed, setCollapsed] = useState(true);
   const [hrtfs, setHrtfs] = useState<HrtfAsset[]>([]);
   const [hrtfError, setHrtfError] = useState<string | null>(null);
+  const [switchingHrtf, setSwitchingHrtf] = useState(false);
   const selectedHrtfId = useSettingsStore((s) => s.selectedHrtfId);
   const setSelectedHrtf = useSettingsStore((s) => s.setSelectedHrtf);
 
@@ -48,6 +49,9 @@ export default function SettingsDock() {
       .then((list) => {
         setHrtfs(list);
         if (!selectedHrtfId) {
+          // Reflète juste ce que le backend a chargé au démarrage (generic.sofa
+          // par défaut) — pas besoin d'appeler PUT /hrtfs/active ici, c'est
+          // déjà la HRTF active côté serveur.
           const active = list.find((h) => h.active) ?? list[0];
           if (active) setSelectedHrtf(active.id);
         }
@@ -55,6 +59,24 @@ export default function SettingsDock() {
       .catch((err: Error) => setHrtfError(err.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Change réellement la HRTF utilisée côté serveur pour les rendus suivants
+  // (avant : ne mettait à jour que le store local, sans effet sur /render).
+  const handleSelectHrtf = async (id: string) => {
+    const previous = selectedHrtfId;
+    setSelectedHrtf(id);
+    setSwitchingHrtf(true);
+    setHrtfError(null);
+    try {
+      await setActiveHrtf(id);
+      setHrtfs((list) => list.map((h) => ({ ...h, active: h.id === id })));
+    } catch (err) {
+      setSelectedHrtf(previous ?? "");
+      setHrtfError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSwitchingHrtf(false);
+    }
+  };
 
   return (
     <div className="settings-dock">
@@ -84,18 +106,19 @@ export default function SettingsDock() {
 
           <label className="field">
             <span>HRTF sélectionnée</span>
-            {hrtfError ? (
-              <span className="error">Backend indisponible ({hrtfError})</span>
-            ) : (
-              <select value={selectedHrtfId ?? ""} onChange={(e) => setSelectedHrtf(e.target.value)}>
-                {hrtfs.length === 0 && <option value="">— chargement —</option>}
-                {hrtfs.map((h) => (
-                  <option key={h.id} value={h.id}>
-                    {h.label}
-                  </option>
-                ))}
-              </select>
-            )}
+            {hrtfError && <span className="error">{hrtfError}</span>}
+            <select
+              value={selectedHrtfId ?? ""}
+              disabled={switchingHrtf}
+              onChange={(e) => handleSelectHrtf(e.target.value)}
+            >
+              {hrtfs.length === 0 && <option value="">— chargement —</option>}
+              {hrtfs.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.label}
+                </option>
+              ))}
+            </select>
           </label>
 
           <button className="add-btn settings-action" onClick={() => {}}>

@@ -1,0 +1,27 @@
+# Environnements Python locaux — l'image installe requirements-api.txt à neuf
+.venv*/
+.venv_ml/
+.venv_spatial_son/
+__pycache__/
+*.pyc
+
+# Frontend — build fait dans son propre conteneur (BeInTheFlow/Dockerfile)
+BeInTheFlow/node_modules/
+BeInTheFlow/dist/
+
+# Données volumineuses / non versionnées — montées en volumes, pas copiées
+dataset/
+dataset_live/
+sound/
+checkpoints/
+checkqpoints/
+mlruns/
+notebooks/
+
+# Divers
+.git/
+.history/
+.vscode/
+results/
+docs/
+DEMONSTRATION/

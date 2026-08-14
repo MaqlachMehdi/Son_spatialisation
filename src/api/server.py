@@ -52,6 +52,9 @@ app.add_middleware(
 
 print(f"[api] Chargement HRTF depuis {SOFA_PATH} …")
 app.state.interpolator = HRTFInterpolator(HRTF.from_sofa(SOFA_PATH), verbose=False)
+# Chemin du .sofa actif — mutable (cf. PUT /hrtfs/active dans routers/hrtfs.py),
+# contrairement à SOFA_PATH qui reste le choix de démarrage figé.
+app.state.active_hrtf_path = SOFA_PATH
 print("[api] HRTFInterpolator prêt.")
 
 app.include_router(auth_router)

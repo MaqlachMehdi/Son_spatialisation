@@ -21,6 +21,7 @@ export default function TrajectoryInspector({ trajectory }: TrajectoryInspectorP
   const playTrajectory = useTrajectoryStore((s) => s.playTrajectory);
   const stopTrajectory = useTrajectoryStore((s) => s.stopTrajectory);
   const sources = useSceneStore((s) => s.sources);
+  const selectedSourceId = useSceneStore((s) => s.selectedId);
   const linkedSources = sources.filter((src) => src.trajectoryId === trajectory.id);
 
   const isPlaying = playingTrajectoryId === trajectory.id;
@@ -70,11 +71,20 @@ export default function TrajectoryInspector({ trajectory }: TrajectoryInspectorP
 
   return (
     <div className="inspector">
-      <button className="add-btn" onClick={() => applyToSelectedSource(trajectory.id)}>
+      <button
+        className="add-btn"
+        onClick={() => applyToSelectedSource(trajectory.id)}
+        disabled={!selectedSourceId}
+        title={selectedSourceId ? undefined : "Sélectionne d'abord une source dans le panneau des sources"}
+      >
         Appliquer à la source sélectionnée
       </button>
 
-      {linkedSources.length === 0 ? (
+      {!selectedSourceId ? (
+        <p className="field-group-label">
+          Sélectionne une source dans le panneau des sources (à droite) avant de cliquer sur « Appliquer ».
+        </p>
+      ) : linkedSources.length === 0 ? (
         <p className="field-group-label">
           Associe une source (bouton ci-dessus) pour pouvoir lire son déplacement.
         </p>

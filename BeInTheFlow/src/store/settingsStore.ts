@@ -1,9 +1,8 @@
 import { create } from "zustand";
 
-// HRTF sélectionnée dans le panneau de réglages. Pour l'instant, ne change
-// que cet état côté frontend — le rendu (/render) utilise toujours le SOFA
-// chargé au démarrage du backend ; brancher la sélection dessus est une
-// suite possible.
+// HRTF sélectionnée dans le panneau de réglages. La mise à jour côté serveur
+// (PUT /hrtfs/active) est déclenchée par SettingsDock, pas ici — ce store ne
+// fait que refléter le choix courant pour l'affichage.
 interface SettingsState {
   selectedHrtfId: string | null;
   setSelectedHrtf: (id: string) => void;

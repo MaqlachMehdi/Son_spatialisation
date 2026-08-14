@@ -7,7 +7,12 @@ import type {
   TrajectoryDTO,
 } from "../types";
 
-const API_BASE = "http://localhost:8000";
+// Relatif, pas "http://localhost:8000" : en prod, le nginx du conteneur
+// frontend proxy-passe /api/ vers le service backend (cf. BeInTheFlow/nginx.conf)
+// — un chemin absolu enverrait le navigateur du visiteur vers SON propre
+// localhost. En dev (npm run dev sans Docker), vite.config.ts proxy-passe
+// pareil /api vers localhost:8000.
+const API_BASE = "/api";
 
 // Messages fastapi-users (codes d'erreur stables, cf. sa doc) traduits pour
 // l'UI plutôt que d'afficher le code brut à l'utilisateur.
@@ -123,6 +128,20 @@ export async function fetchHrtfs(): Promise<HrtfAsset[]> {
   const res = await fetch(`${API_BASE}/hrtfs`);
   if (!res.ok) {
     throw new Error(`GET /hrtfs a échoué : ${res.status}`);
+  }
+  return res.json();
+}
+
+// Change la HRTF utilisée par le backend pour tous les rendus suivants.
+export async function setActiveHrtf(id: string): Promise<HrtfAsset> {
+  const res = await fetch(`${API_BASE}/hrtfs/active`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id }),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`PUT /hrtfs/active a échoué (${res.status}) : ${detail}`);
   }
   return res.json();
 }

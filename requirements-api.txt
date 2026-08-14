@@ -1,0 +1,28 @@
+# Dépendances de l'API FastAPI (src/api/) et du pipeline de spatialisation
+# qu'elle sert (hrtf/, scene/, engine/) — sous-ensemble de Requirements.txt,
+# sans jupyter/notebook/ipywidgets/sounddevice (inutiles en conteneur,
+# sounddevice a même besoin d'un device audio réel) ni les dépendances du
+# module cross-modal (tensorflow, mlflow, scikit-learn...), qui vivent dans
+# un environnement de recherche séparé (.venv_ml), pas dans l'API servie.
+#
+# netCDF4 : dépendance réelle de hrtf/hrtf.py (Dataset), absente de
+# Requirements.txt qui liste "python-sofa" mais ne l'importe jamais.
+# matplotlib : import dur dans scene/Trajectory.py (méthodes .plot()),
+# donc nécessaire même si l'API n'appelle jamais ces méthodes.
+
+numpy>=1.24.0
+scipy>=1.11.0
+soundfile>=0.12.1
+netCDF4>=1.6.5
+matplotlib>=3.7.0
+librosa>=0.10.0
+
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+
+sqlalchemy>=2.0.30
+asyncpg>=0.29.0
+alembic>=1.13.0
+fastapi-users[sqlalchemy]>=13.0.0
+python-dotenv>=1.0.1

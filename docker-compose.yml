@@ -16,5 +16,46 @@ services:
       timeout: 5s
       retries: 5
 
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Toujours "postgres" (nom du service), jamais "localhost" : construit
+      # depuis les mêmes POSTGRES_* que le service postgres ci-dessus plutôt
+      # que de réutiliser la variable DATABASE_URL de .env.example, qui elle
+      # pointe vers localhost:5432 pour l'usage host (alembic en dev).
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-son_spatialisation}:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/${POSTGRES_DB:-son_spatialisation}
+      JWT_SECRET: ${JWT_SECRET:-changeme-generate-a-real-secret}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:5173}
+    volumes:
+      - ./dataset:/app/dataset:ro
+      - ./sound:/app/sound
+    ports:
+      - "8000:8000"
+    healthcheck:
+      # Pas de curl dans l'image (non installé, cf. Dockerfile.backend) :
+      # urllib fait l'affaire pour une simple vérification de disponibilité.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/hrtfs')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./BeInTheFlow
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "5173:80"
+
 volumes:
   postgres_data:
