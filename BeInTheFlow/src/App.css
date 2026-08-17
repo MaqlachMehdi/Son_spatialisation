@@ -240,9 +240,23 @@
   z-index: 20;
 }
 
+.top-bar-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 0.75rem;
+}
+
+.top-bar-logo {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 .top-bar h1 {
   font-size: 1.1rem;
-  margin: 0 0 0.75rem;
+  margin: 0;
   font-weight: 600;
 }
 

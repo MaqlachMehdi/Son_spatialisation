@@ -1,0 +1,37 @@
+name: Deploy en production
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Déployer sur le serveur (git pull + rebuild + migrations)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd ~/BeInTheFlow/Son_spatialisation
+            git pull origin main
+            docker compose up -d --build
+            source .venv/bin/activate
+            alembic upgrade head
+            docker compose ps
+
+      - name: Vérifier que le site répond (healthcheck public)
+        run: |
+          status=$(curl -s -o /dev/null -w "%{http_code}" https://beintheflow.site/api/hrtfs)
+          echo "Statut reçu : $status"
+          if [ "$status" != "200" ]; then
+            echo "::error::Le site ne répond pas correctement après déploiement (status $status)"
+            exit 1
+          fi
