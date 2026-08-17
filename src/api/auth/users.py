@@ -73,3 +73,9 @@ fastapi_users = FastAPIUsers[User, uuid.UUID](get_user_manager, [auth_backend])
 # Dépendance à utiliser sur toute route qui doit être scopée à l'utilisateur
 # connecté (ex: les futures routes /scenes).
 current_active_user = fastapi_users.current_user(active=True)
+
+# Variante pour les routes accessibles aux anonymes MAIS dont le comportement
+# doit varier si un compte est connecté (ex: /sounds inclut les imports
+# personnels, /render doit pouvoir résoudre un son personnel) — None plutôt
+# qu'une 401 si pas de session.
+current_active_user_optional = fastapi_users.current_user(active=True, optional=True)

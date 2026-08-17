@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
-import type { SoundSourceDTO, SoundAsset } from "../types";
+import { useEffect } from "react";
+import type { SoundSourceDTO } from "../types";
 import { useSceneStore } from "../store/sceneStore";
-import { fetchSounds } from "../utils/api";
+import { useSoundsStore } from "../store/soundsStore";
 import { INSTRUMENT_CATALOG, UNAVAILABLE_INSTRUMENTS } from "../three/instrumentCatalog";
 
 interface SourceInspectorProps {
@@ -10,13 +10,13 @@ interface SourceInspectorProps {
 
 export default function SourceInspector({ source }: SourceInspectorProps) {
   const updateSource = useSceneStore((s) => s.updateSource);
-  const [sounds, setSounds] = useState<SoundAsset[]>([]);
-  const [soundsError, setSoundsError] = useState<string | null>(null);
+  const sounds = useSoundsStore((s) => s.sounds);
+  const soundsError = useSoundsStore((s) => s.error);
+  const refreshSounds = useSoundsStore((s) => s.refreshSounds);
 
   useEffect(() => {
-    fetchSounds()
-      .then(setSounds)
-      .catch((err: Error) => setSoundsError(err.message));
+    refreshSounds();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const field = (

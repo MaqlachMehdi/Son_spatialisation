@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSettingsStore } from "../store/settingsStore";
-import { fetchHrtfs, setActiveHrtf } from "../utils/api";
+import { useAuthStore } from "../store/authStore";
+import { useSoundsStore } from "../store/soundsStore";
+import { fetchHrtfs, setActiveHrtf, uploadSound, deleteSound } from "../utils/api";
 import { resetCamera } from "../utils/cameraControl";
 import type { HrtfAsset } from "../types";
 
@@ -43,6 +45,49 @@ export default function SettingsDock() {
   const [switchingHrtf, setSwitchingHrtf] = useState(false);
   const selectedHrtfId = useSettingsStore((s) => s.selectedHrtfId);
   const setSelectedHrtf = useSettingsStore((s) => s.setSelectedHrtf);
+
+  const isAuthenticated = useAuthStore((s) => s.status === "authenticated");
+  const sounds = useSoundsStore((s) => s.sounds);
+  const refreshSounds = useSoundsStore((s) => s.refreshSounds);
+  const personalSounds = sounds.filter((s) => s.personal);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    refreshSounds();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // permet de réimporter le même fichier deux fois de suite
+    if (!file) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      await uploadSound(file);
+      await refreshSounds();
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDeleteSound = async (id: string) => {
+    const rawId = id.startsWith("personal:") ? id.slice("personal:".length) : id;
+    setDeletingId(id);
+    try {
+      await deleteSound(rawId);
+      await refreshSounds();
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   useEffect(() => {
     fetchHrtfs()
@@ -126,9 +171,48 @@ export default function SettingsDock() {
             Trouver sa HRTF optimale
           </button>
 
-          <button className="add-btn" onClick={() => {}}>
-            Importer un son
+          <div className="field-group-label">Sons importés</div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".wav,.mp3,.flac,.ogg,.m4a,.aac,audio/*"
+            style={{ display: "none" }}
+            onChange={handleFileSelected}
+          />
+
+          <button
+            className="add-btn"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={!isAuthenticated || uploading}
+            title={isAuthenticated ? undefined : "Connecte-toi pour importer un son"}
+          >
+            {uploading ? "Import en cours…" : "+ Importer un son"}
           </button>
+
+          {!isAuthenticated && (
+            <p className="field-group-label">Connecte-toi pour importer et retrouver tes propres sons.</p>
+          )}
+
+          {uploadError && <p className="error">{uploadError}</p>}
+
+          {isAuthenticated && personalSounds.length > 0 && (
+            <div className="source-list">
+              {personalSounds.map((s) => (
+                <div key={s.id} className="source-row">
+                  <span className="source-name">{s.label}</span>
+                  <button
+                    className="remove-btn"
+                    onClick={() => handleDeleteSound(s.id)}
+                    disabled={deletingId === s.id}
+                    aria-label={`Supprimer ${s.label}`}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
 
           <button className="add-btn" onClick={() => {}}>
             Enregistrer un son

@@ -36,6 +36,7 @@ services:
     volumes:
       - ./dataset:/app/dataset:ro
       - ./sound:/app/sound
+      - ./sound_uploads:/app/sound_uploads
     ports:
       - "8000:8000"
     healthcheck:

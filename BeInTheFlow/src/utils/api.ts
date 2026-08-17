@@ -116,12 +116,45 @@ export async function saveWorkspace(sources: SoundSourceDTO[], trajectories: Tra
   if (!res.ok) throw new Error(`PUT /workspace a échoué : ${res.status}`);
 }
 
+// credentials: "include" — le backend fusionne les sons importés du compte
+// connecté au catalogue partagé (voir routers/sounds.py) ; sans le cookie de
+// session, on n'a que le catalogue partagé, comme pour un visiteur anonyme.
 export async function fetchSounds(): Promise<SoundAsset[]> {
-  const res = await fetch(`${API_BASE}/sounds`);
+  const res = await fetch(`${API_BASE}/sounds`, { credentials: "include" });
   if (!res.ok) {
     throw new Error(`GET /sounds a échoué : ${res.status}`);
   }
   return res.json();
+}
+
+// Upload d'un son personnel — nécessite d'être connecté (backend renvoie
+// 401 sinon). Le fichier est converti en WAV côté serveur quel que soit son
+// format d'origine (wav/mp3/flac/ogg/m4a/aac).
+export async function uploadSound(file: File): Promise<SoundAsset> {
+  const body = new FormData();
+  body.append("file", file);
+  const res = await fetch(`${API_BASE}/sounds/upload`, {
+    method: "POST",
+    credentials: "include",
+    body,
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Échec de l'import (${res.status}) : ${detail}`);
+  }
+  return res.json();
+}
+
+// id attendu : la partie après "personal:" dans SoundAsset.id (ex. appeler
+// avec "abcd1234", pas "personal:abcd1234").
+export async function deleteSound(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/sounds/upload/${id}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    throw new Error(`DELETE /sounds/upload a échoué : ${res.status}`);
+  }
 }
 
 export async function fetchHrtfs(): Promise<HrtfAsset[]> {

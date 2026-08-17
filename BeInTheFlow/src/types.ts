@@ -61,6 +61,9 @@ export interface SoundAsset {
   id: string;
   label: string;
   path: string;
+  // true = son importé par le compte connecté (affichable/supprimable
+  // uniquement par son propriétaire), false/absent = catalogue partagé.
+  personal?: boolean;
 }
 
 export interface HrtfAsset {
