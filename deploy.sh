@@ -24,8 +24,8 @@ fi
 echo "==> Push de la branche courante vers GitHub"
 git push origin main
 
-echo "==> git pull sur le serveur"
-ssh_run "cd $REMOTE_DIR && git pull origin main"
+echo "==> Synchronisation du serveur sur origin/main (fetch + reset --hard : le serveur est un miroir de déploiement, jamais une source de vérité)"
+ssh_run "cd $REMOTE_DIR && git fetch origin && git reset --hard origin/main"
 
 echo "==> Rebuild + redémarrage des conteneurs modifiés"
 ssh_run "cd $REMOTE_DIR && docker compose up -d --build"
