@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import os
+import subprocess
 import tempfile
 import uuid
 from pathlib import Path
@@ -32,9 +33,12 @@ def _decode_any_format(content: bytes, ext: str):
     """Décode le fichier uploadé quel que soit son format d'origine.
 
     soundfile (libsndfile) lit nativement wav/flac/ogg/aiff mais pas les
-    formats compressés type mp3/m4a/aac/webm — pour ceux-là on retombe sur
-    librosa (backend audioread → ffmpeg). Retourne (audio, samplerate) avec
-    audio en (frames,) ou (frames, channels), prêt pour sf.write.
+    formats compressés type mp3/m4a/aac/webm — pour ceux-là on appelle
+    ffmpeg directement en sous-processus plutôt que de passer par le repli
+    "audioread" de librosa : ce dernier a été retiré en librosa 1.0 (present
+    en 0.10.x, marqué déprécié, absent depuis — cf. ModuleNotFoundError
+    "audioread" observé une fois la dépendance mise à jour), donc plus fiable
+    de ne pas en dépendre pour cette conversion.
     """
     try:
         audio, samplerate = sf.read(io.BytesIO(content), dtype="float32")
@@ -42,34 +46,33 @@ def _decode_any_format(content: bytes, ext: str):
     except Exception:
         pass
 
+    # ffmpeg a besoin d'un vrai fichier sur disque en entrée (pas de stdin
+    # ici pour rester simple). delete=False + suppression manuelle : sur
+    # Windows, un fichier encore ouvert par ce process ne peut pas être
+    # relu par le sous-processus tant qu'on ne l'a pas fermé nous-même.
+    in_path = out_path = None
     try:
-        import librosa
-    except ImportError as exc:
-        raise HTTPException(status_code=400, detail="Format de fichier non reconnu.") from exc
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp_in:
+            tmp_in.write(content)
+            in_path = tmp_in.name
+        out_path = in_path + ".wav"
 
-    # Le repli ffmpeg d'audioread lance un sous-processus ("ffmpeg -i <chemin>
-    # ...") : il lui faut un vrai fichier sur disque, un BytesIO ne
-    # fonctionne pas (audioread.exceptions.NoBackendError silencieux sinon).
-    # delete=False + suppression manuelle : sur Windows, un fichier encore
-    # ouvert par ce process ne peut pas être réouvert par le sous-processus
-    # ffmpeg tant qu'on ne l'a pas fermé nous-même.
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
-        # mono=False + .T : librosa retourne (channels, frames), sf.write
-        # attend (frames, channels) — même convention que soundfile ailleurs
-        # dans le projet (DynamicSoundscape.py).
-        audio, samplerate = librosa.load(tmp_path, sr=None, mono=False)
-        if audio.ndim == 2:
-            audio = audio.T
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", in_path, "-f", "wav", out_path],
+            capture_output=True,
+            timeout=60,
+        )
+        if result.returncode != 0 or not os.path.exists(out_path):
+            raise RuntimeError(result.stderr.decode(errors="replace"))
+
+        audio, samplerate = sf.read(out_path, dtype="float32")
         return audio, samplerate
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Impossible de décoder ce fichier audio.") from exc
     finally:
-        if tmp_path:
-            os.unlink(tmp_path)
+        for p in (in_path, out_path):
+            if p and os.path.exists(p):
+                os.unlink(p)
 
 
 @router.get("/sounds", response_model=list[SoundAsset])
