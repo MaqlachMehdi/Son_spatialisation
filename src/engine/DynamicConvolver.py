@@ -20,7 +20,8 @@ import soundfile as sf
 
 from .SegmentEngine import SegmentEngine
 from hrtf import HRTF
-from scene import Trajectory
+from scene import Trajectory, Listener
+from scene.geometry import spherical_to_cartesian, cartesian_to_spherical
 
 
 class DynamicConvolver:
@@ -41,7 +42,16 @@ class DynamicConvolver:
     sr : int
         Fréquence d'échantillonnage.
     trajectory : Trajectory
-        Trajectoire spatiale.
+        Trajectoire spatiale de la source.
+    listener : Listener | None
+        Auditeur mobile (position + orientation dans le repère monde).
+        Si None (défaut) : auditeur implicite fixe à l'origine, comportement
+        historique inchangé — trajectory.get_position()/get_distance() sont
+        utilisés directement comme avant.
+        Si fourni : la position de la source est réinterprétée comme un point
+        du repère MONDE (sur une sphère de rayon trajectory.R ou
+        get_distance(), centrée à l'origine), puis reprojetée dans le repère
+        de la tête à chaque bloc via la pose de l'auditeur.
     segment_ms : float | None
         [SegmentEngine] Durée d'un segment. Incompatible avec hop_ms.
     overlap_ms : float | None
@@ -68,6 +78,7 @@ class DynamicConvolver:
         overlap_ms:     float | None = None,
         crossfade_type: str          = "cosine",
         hop_ms:         float | None = None,
+        listener:       Listener | None = None,
     ) -> None:
         if hop_ms is not None and segment_ms is not None:
             raise ValueError(
@@ -81,6 +92,7 @@ class DynamicConvolver:
 
         self.hrtf       = hrtf
         self.trajectory = trajectory
+        self.listener   = listener
         self.sr         = int(sr)
 
         signal = np.asarray(signal, dtype=np.float32)
@@ -117,15 +129,50 @@ class DynamicConvolver:
         """Pas en échantillons, compatible SegmentEngine et WOLAEngine."""
         return getattr(self.engine, "hop_samples", None) or self.engine.segment_samples
 
+    def _listener_relative(self, t: float) -> tuple[float, float, float]:
+        """
+        Position de la source (az°, el°, r) dans le repère de la tête, à l'instant t.
+
+        1. La position de la source est interprétée comme un point du repère
+           MONDE : S(t), sur une sphère de rayon trajectory.get_distance(t)
+           (ou trajectory.R à défaut, 2.06 m par défaut), centrée à l'origine.
+        2. L'auditeur a une pose (position L(t), rotation R(t) tête->monde)
+           dans ce même repère monde (Listener.get_pose).
+        3. d(t) = R(t)ᵀ · (S(t) − L(t))  — position relative à la tête
+           (Rᵀ = R⁻¹ car R est orthonormale).
+        4. Conversion cartésien -> sphérique pour l'appel HRTF / le gain 1/r.
+
+        Avec un StaticListener à l'origine et orientation neutre, ce calcul
+        redonne exactement (az_source, el_source, R_ref) — comportement
+        identique au cas sans auditeur, aux erreurs d'arrondi flottant près.
+        """
+        az_src, el_src = self.trajectory.get_position(t)
+        get_distance = getattr(self.trajectory, "get_distance", None)
+        r_src = get_distance(t) if callable(get_distance) else getattr(self.trajectory, "R", 2.06)
+
+        S = spherical_to_cartesian(az_src, el_src, r_src)
+        L, R = self.listener.get_pose(t)
+        return cartesian_to_spherical(R.T @ (S - L))
+
     def _compute_segment_positions(self) -> list[tuple[float, float]]:
-        """Evalue trajectory.get_position(t_center) pour chaque bloc."""
+        """
+        Evalue la position angulaire de la source pour chaque bloc.
+
+        Sans listener : trajectory.get_position(t_center) directement
+        (comportement historique).
+        Avec listener : position reprojetée dans le repère de la tête,
+        cf. _listener_relative().
+        """
         n_blocks  = int(np.ceil(len(self.signal) / self._stride_samples))
         stride_s  = self._stride_samples / self.sr
 
         positions: list[tuple[float, float]] = []
         for i in range(n_blocks):
             t_center = (i + 0.5) * stride_s
-            az, el = self.trajectory.get_position(t_center)
+            if self.listener is not None:
+                az, el, _ = self._listener_relative(t_center)
+            else:
+                az, el = self.trajectory.get_position(t_center)
             positions.append((float(az), float(el)))
 
         return positions
@@ -152,8 +199,17 @@ class DynamicConvolver:
         return hrirs
 
     def _compute_segment_gains(self) -> list[float] | None:
-        """Gain 1/r par bloc si la trajectoire expose get_distance()."""
-        if not hasattr(self.trajectory, "get_distance"):
+        """
+        Gain 1/r par bloc.
+
+        Sans listener : uniquement si la trajectoire expose get_distance()
+        (comportement historique).
+        Avec listener : toujours calculé, distance mesurée depuis la pose de
+        l'auditeur (cf. _listener_relative), même si la trajectoire de la
+        source n'expose pas get_distance() (source alors supposée sur la
+        sphère de rayon trajectory.R, 2.06 m par défaut).
+        """
+        if self.listener is None and not hasattr(self.trajectory, "get_distance"):
             return None
 
         n_blocks = int(np.ceil(len(self.signal) / self._stride_samples))
@@ -163,7 +219,10 @@ class DynamicConvolver:
         gains = []
         for i in range(n_blocks):
             t_center = (i + 0.5) * stride_s
-            r = self.trajectory.get_distance(t_center)
+            if self.listener is not None:
+                _, _, r = self._listener_relative(t_center)
+            else:
+                r = self.trajectory.get_distance(t_center)
             gains.append(float(R_ref / max(r, 0.01)))
         return gains
 
@@ -215,5 +274,6 @@ class DynamicConvolver:
         return (
             f"DynamicConvolver(sr={self.sr} Hz, "
             f"moteur={engine_name}, {params}, "
+            f"auditeur={'mobile' if self.listener is not None else 'fixe'}, "
             f"rendu={'oui' if done else 'non'})"
         )

@@ -3,7 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#1a1a1d" />
+    <!-- "Ajouter à l'écran d'accueil" iOS : lance en plein écran (sans la
+         barre Safari) avec ce titre sous l'icône — sans ces deux balises,
+         iOS ignore le manifest et se rabat sur un raccourci Safari classique. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="BeInTheFlow" />
     <title>BeInTheFlow</title>
   </head>
   <body>

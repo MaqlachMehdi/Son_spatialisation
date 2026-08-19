@@ -23,6 +23,7 @@ import soundfile as sf
 
 from hrtf import HRTF
 from .Trajectory import Trajectory
+from .Listener import Listener
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -61,6 +62,10 @@ class DynamicSoundscape:
         Doit couvrir la queue HRIR (11.6 ms pour IRCAM LISTEN 44100 Hz).
     crossfade_type : 'linear' | 'cosine' | 'equal_power'
         Forme de l'enveloppe de crossfade (défaut : 'cosine').
+    listener : Listener | None
+        Auditeur commun à toutes les sources de la scène (position +
+        orientation mobiles). Si None (défaut) : auditeur implicite fixe à
+        l'origine, comportement historique inchangé.
 
     Attributs publics (disponibles après render())
     ----------------------------------------------
@@ -75,10 +80,12 @@ class DynamicSoundscape:
         segment_ms: float,
         overlap_ms: float | None = None,
         crossfade_type: str = "cosine",
+        listener: Listener | None = None,
     ) -> None:
         self.hrtf          = hrtf
         self.segment_ms    = float(segment_ms)
         self.crossfade_type = crossfade_type
+        self.listener       = listener
 
         # overlap automatique : au moins 110 % de la durée HRIR
         if overlap_ms is None:
@@ -205,6 +212,7 @@ class DynamicSoundscape:
                 segment_ms     = self.segment_ms,
                 overlap_ms     = self.overlap_ms,
                 crossfade_type = self.crossfade_type,
+                listener       = self.listener,
             )
             out = convolver.run()           # (M, 2)
             out = (out * src.gain).astype(np.float32)
@@ -278,5 +286,6 @@ class DynamicSoundscape:
             f"segment={self.segment_ms:.0f} ms, "
             f"overlap={self.overlap_ms:.1f} ms, "
             f"crossfade='{self.crossfade_type}', "
+            f"auditeur={'mobile' if self.listener is not None else 'fixe'}, "
             f"rendu={'oui' if self.rendered is not None else 'non'})"
         )
