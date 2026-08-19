@@ -4,6 +4,7 @@ import { useAuthStore } from "../store/authStore";
 import { useSoundsStore } from "../store/soundsStore";
 import { fetchHrtfs, setActiveHrtf, uploadSound, deleteSound } from "../utils/api";
 import { resetCamera } from "../utils/cameraControl";
+import RecordSoundButton from "./RecordSoundButton";
 import type { HrtfAsset } from "../types";
 
 // Roue de réglage classique (icône générique "settings").
@@ -171,7 +172,7 @@ export default function SettingsDock() {
             Trouver sa HRTF optimale
           </button>
 
-          <div className="field-group-label">Sons importés</div>
+          <div className="field-group-label">Mes sons</div>
 
           <input
             ref={fileInputRef}
@@ -189,6 +190,8 @@ export default function SettingsDock() {
           >
             {uploading ? "Import en cours…" : "+ Importer un son"}
           </button>
+
+          <RecordSoundButton />
 
           {!isAuthenticated && (
             <p className="field-group-label">Connecte-toi pour importer et retrouver tes propres sons.</p>
@@ -213,10 +216,6 @@ export default function SettingsDock() {
               ))}
             </div>
           )}
-
-          <button className="add-btn" onClick={() => {}}>
-            Enregistrer un son
-          </button>
         </div>
       </div>
     </div>

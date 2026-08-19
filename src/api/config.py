@@ -21,4 +21,4 @@ AUDIO_EXTENSIONS = (".wav", ".flac")
 # à son propriétaire.
 UPLOADS_DIR = ROOT / "sound_uploads"
 UPLOAD_MAX_BYTES = 50 * 1024 * 1024  # 50 Mo
-UPLOAD_EXTENSIONS = (".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac")
+UPLOAD_EXTENSIONS = (".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac", ".webm")

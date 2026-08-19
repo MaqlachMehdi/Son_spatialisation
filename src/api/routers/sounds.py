@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import io
+import os
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -26,11 +28,11 @@ class SoundAsset(BaseModel):
     personal: bool = False
 
 
-def _decode_any_format(content: bytes):
+def _decode_any_format(content: bytes, ext: str):
     """Décode le fichier uploadé quel que soit son format d'origine.
 
     soundfile (libsndfile) lit nativement wav/flac/ogg/aiff mais pas les
-    formats compressés type mp3/m4a/aac — pour ceux-là on retombe sur
+    formats compressés type mp3/m4a/aac/webm — pour ceux-là on retombe sur
     librosa (backend audioread → ffmpeg). Retourne (audio, samplerate) avec
     audio en (frames,) ou (frames, channels), prêt pour sf.write.
     """
@@ -45,16 +47,29 @@ def _decode_any_format(content: bytes):
     except ImportError as exc:
         raise HTTPException(status_code=400, detail="Format de fichier non reconnu.") from exc
 
+    # Le repli ffmpeg d'audioread lance un sous-processus ("ffmpeg -i <chemin>
+    # ...") : il lui faut un vrai fichier sur disque, un BytesIO ne
+    # fonctionne pas (audioread.exceptions.NoBackendError silencieux sinon).
+    # delete=False + suppression manuelle : sur Windows, un fichier encore
+    # ouvert par ce process ne peut pas être réouvert par le sous-processus
+    # ffmpeg tant qu'on ne l'a pas fermé nous-même.
+    tmp_path = None
     try:
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
         # mono=False + .T : librosa retourne (channels, frames), sf.write
         # attend (frames, channels) — même convention que soundfile ailleurs
         # dans le projet (DynamicSoundscape.py).
-        audio, samplerate = librosa.load(io.BytesIO(content), sr=None, mono=False)
+        audio, samplerate = librosa.load(tmp_path, sr=None, mono=False)
         if audio.ndim == 2:
             audio = audio.T
         return audio, samplerate
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Impossible de décoder ce fichier audio.") from exc
+    finally:
+        if tmp_path:
+            os.unlink(tmp_path)
 
 
 @router.get("/sounds", response_model=list[SoundAsset])
@@ -107,7 +122,7 @@ async def upload_sound(
     if not content:
         raise HTTPException(status_code=400, detail="Fichier vide.")
 
-    audio, samplerate = _decode_any_format(content)
+    audio, samplerate = _decode_any_format(content, ext)
 
     asset_id = uuid.uuid4().hex
     storage_path = f"{user.id}/{asset_id}.wav"

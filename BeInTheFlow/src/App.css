@@ -494,6 +494,52 @@ a.add-btn {
   border-radius: 1px;
 }
 
+.record-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.recording-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.recording-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--error);
+  animation: recording-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes recording-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+/* Bouton stop autonome (pas à côté d'un bouton Play) : pas de flex:1 hérité. */
+.record-stop-btn {
+  flex: none;
+  width: 100%;
+  padding: 0.5rem;
+  gap: 0.4rem;
+}
+
+.record-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.record-actions .add-btn,
+.record-actions .play-btn {
+  flex: 1;
+}
+
 .error {
   color: var(--error);
   font-size: 0.8rem;
