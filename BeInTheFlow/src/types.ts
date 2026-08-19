@@ -57,6 +57,25 @@ export interface TrajectoryDTO {
   offsetDistance: number;
 }
 
+// Pose de l'auditeur dans le repère monde SOFA (x=devant, y=gauche, mètres ;
+// angles en degrés) — même sémantique que Listener.get_pose() côté Python
+// (src/scene/geometry.py: rotation_from_ypr). z (altitude) n'est pas suivi :
+// approximation "on marche à plat", cf. utils/phoneMotion.ts.
+export interface ListenerPose {
+  x: number;
+  y: number;
+  yaw: number;
+  pitch: number;
+  roll: number;
+}
+
+// Un point du chemin parcouru par l'auditeur pendant une capture "auditeur
+// dynamique" — même forme que les waypoints attendus par MovingListener
+// côté Python (t, x, y, z, yaw, pitch, roll), z omis (toujours 0 ici).
+export interface ListenerWaypoint extends ListenerPose {
+  t: number;
+}
+
 export interface SoundAsset {
   id: string;
   label: string;

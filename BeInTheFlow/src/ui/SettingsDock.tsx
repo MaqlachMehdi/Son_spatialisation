@@ -5,6 +5,7 @@ import { useSoundsStore } from "../store/soundsStore";
 import { fetchHrtfs, setActiveHrtf, uploadSound, deleteSound } from "../utils/api";
 import { resetCamera } from "../utils/cameraControl";
 import RecordSoundButton from "./RecordSoundButton";
+import DynamicListenerButton from "./DynamicListenerButton";
 import type { HrtfAsset } from "../types";
 
 // Roue de réglage classique (icône générique "settings").
@@ -143,6 +144,8 @@ export default function SettingsDock() {
       >
         <RecenterIcon />
       </button>
+
+      <DynamicListenerButton />
 
       <div className={`settings-panel ${collapsed ? "collapsed" : ""}`}>
         <div className="settings-panel-inner">

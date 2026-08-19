@@ -3,6 +3,7 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Grid } from "@react-three/drei";
 import { registerOrbitControls } from "../utils/cameraControl";
 import ListenerHead from "./ListenerHead";
+import ListenerPath from "./ListenerPath";
 import ReferenceSphere from "./ReferenceSphere";
 import SourceNode from "./SourceNode";
 import TrajectoryLine from "./TrajectoryLine";
@@ -41,6 +42,7 @@ export default function SceneCanvas() {
       />
 
       <ListenerHead />
+      <ListenerPath />
       <ReferenceSphere radius={REFERENCE_RADIUS} />
       <TrajectoryPlayer />
       {selectedTrajectory && <TrajectoryLine trajectory={selectedTrajectory} />}

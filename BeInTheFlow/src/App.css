@@ -260,6 +260,42 @@
   font-weight: 600;
 }
 
+.listener-toggle-wrap {
+  position: relative;
+  display: flex;
+}
+
+.listener-toggle {
+  color: var(--text);
+}
+
+.listener-toggle:hover {
+  color: var(--accent);
+}
+
+.listener-toggle.recording {
+  color: #ff2b4d;
+  animation: listener-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes listener-pulse {
+  0%, 100% {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(255, 43, 77, 0.35), 0 2px 8px rgba(0, 0, 0, 0.4);
+  }
+}
+
+.listener-error {
+  position: absolute;
+  top: 46px;
+  left: 0;
+  width: 220px;
+  margin: 0;
+  z-index: 30;
+}
+
 .sidebar-header h1 {
   font-size: 1.1rem;
   margin: 0 0 0.75rem;
