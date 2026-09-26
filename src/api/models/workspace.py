@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import JSON, ForeignKey
+from sqlalchemy import JSON, Boolean, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..database import Base
@@ -57,3 +57,4 @@ class Source(Base):
     muted: Mapped[bool]
     model_id: Mapped[str | None]
     trajectory_id: Mapped[str | None]
+    lock_to_listener: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")

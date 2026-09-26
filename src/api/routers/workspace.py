@@ -94,6 +94,7 @@ async def put_workspace(
                 muted=s.muted,
                 model_id=s.model_id,
                 trajectory_id=s.trajectory_id,
+                lock_to_listener=s.lock_to_listener,
             )
         )
 

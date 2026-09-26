@@ -18,10 +18,12 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+from scipy.signal import fftconvolve
+
 from .SegmentEngine import SegmentEngine
 from hrtf import HRTF
-from scene import Trajectory, Listener
-from scene.geometry import spherical_to_cartesian, cartesian_to_spherical
+from scene import Trajectory, Listener, Directivity, SourceOrientation
+from scene.geometry import spherical_to_cartesian, cartesian_to_spherical, emission_angle_deg
 
 
 class DynamicConvolver:
@@ -52,6 +54,17 @@ class DynamicConvolver:
         du repère MONDE (sur une sphère de rayon trajectory.R ou
         get_distance(), centrée à l'origine), puis reprojetée dans le repère
         de la tête à chaque bloc via la pose de l'auditeur.
+    directivity : Directivity | None
+        Directivité d'émission de la source (PistonDirectivity, ...).
+        Si None (défaut) : source omnidirectionnelle, comportement historique
+        inchangé. Si fourni, source_orientation est requis.
+    source_orientation : SourceOrientation | None
+        Axe d'émission de la source (FixedOrientation, VelocityOrientation, ...).
+        Requis si directivity est fourni ; ignoré sinon.
+    directivity_n_taps : int
+        Longueur (échantillons) du filtre FIR de directivité construit par
+        bloc (défaut : 129). Convolué en mode='same' dans chaque HRIR — ne
+        change pas la longueur des HRIR, aucun impact sur SegmentEngine/WOLAEngine.
     segment_ms : float | None
         [SegmentEngine] Durée d'un segment. Incompatible avec hop_ms.
     overlap_ms : float | None
@@ -79,6 +92,9 @@ class DynamicConvolver:
         crossfade_type: str          = "cosine",
         hop_ms:         float | None = None,
         listener:       Listener | None = None,
+        directivity:    Directivity | None = None,
+        source_orientation: SourceOrientation | None = None,
+        directivity_n_taps: int = 129,
     ) -> None:
         if hop_ms is not None and segment_ms is not None:
             raise ValueError(
@@ -89,11 +105,19 @@ class DynamicConvolver:
             raise ValueError(
                 "Fournissez soit hop_ms (WOLAEngine) soit segment_ms + overlap_ms (SegmentEngine)."
             )
+        if directivity is not None and source_orientation is None:
+            raise ValueError(
+                "source_orientation est requis quand directivity est fourni "
+                "(l'axe d'émission de la source doit être défini pour calculer l'angle de directivité)."
+            )
 
-        self.hrtf       = hrtf
-        self.trajectory = trajectory
-        self.listener   = listener
-        self.sr         = int(sr)
+        self.hrtf               = hrtf
+        self.trajectory         = trajectory
+        self.listener           = listener
+        self.directivity        = directivity
+        self.source_orientation = source_orientation
+        self.directivity_n_taps = int(directivity_n_taps)
+        self.sr                 = int(sr)
 
         signal = np.asarray(signal, dtype=np.float32)
         if signal.ndim == 2:
@@ -154,6 +178,33 @@ class DynamicConvolver:
         L, R = self.listener.get_pose(t)
         return cartesian_to_spherical(R.T @ (S - L))
 
+    def _source_world_position(self, t: float) -> np.ndarray:
+        """Position monde S(t) de la source, reconstruite depuis (az, el, r) de la trajectoire."""
+        az_src, el_src = self.trajectory.get_position(t)
+        get_distance = getattr(self.trajectory, "get_distance", None)
+        r_src = get_distance(t) if callable(get_distance) else getattr(self.trajectory, "R", 2.06)
+        return spherical_to_cartesian(az_src, el_src, r_src)
+
+    def _emission_angle(self, t: float) -> float:
+        """
+        Angle d'émission theta(t) : angle entre l'axe d'émission de la source
+        (source_orientation) et la direction source -> auditeur.
+
+        L'auditeur est pris à l'origine si self.listener est None (comportement
+        cohérent avec l'auditeur implicite fixe utilisé partout ailleurs quand
+        listener n'est pas fourni).
+        """
+        S = self._source_world_position(t)
+        L = self.listener.get_pose(t)[0] if self.listener is not None else np.zeros(3)
+        direction = self.source_orientation.get_direction(t)
+        return emission_angle_deg(direction, S, L)
+
+    def _compute_segment_emission_angles(self) -> list[float]:
+        """Evalue _emission_angle(t_center) pour chaque bloc."""
+        n_blocks = int(np.ceil(len(self.signal) / self._stride_samples))
+        stride_s = self._stride_samples / self.sr
+        return [self._emission_angle((i + 0.5) * stride_s) for i in range(n_blocks)]
+
     def _compute_segment_positions(self) -> list[tuple[float, float]]:
         """
         Evalue la position angulaire de la source pour chaque bloc.
@@ -180,21 +231,36 @@ class DynamicConvolver:
     def _fetch_hrirs(
         self,
         positions: list[tuple[float, float]],
+        thetas:    list[float] | None = None,
     ) -> list[tuple[np.ndarray, np.ndarray]]:
-        """Recupere une paire HRIR (L, R) par position."""
+        """
+        Recupere une paire HRIR (L, R) par position.
+
+        Si thetas est fourni (self.directivity actif), chaque paire HRIR est
+        pré-filtrée par le filtre de directivité à l'angle d'émission de ce
+        bloc (mode='same' : longueur HRIR inchangée). Le filtre est identique
+        sur les deux oreilles — il ne modifie ni l'ITD ni l'ILD, uniquement
+        le timbre/niveau, donc il commute avec la convolution HRIR et peut
+        être appliqué directement dans les HRIR sans toucher SegmentEngine/WOLAEngine.
+        """
         hrirs: list[tuple[np.ndarray, np.ndarray]] = []
         get_nearest = getattr(self.hrtf, "get_nearest_hrir", None)
 
-        for az, el in positions:
+        for i, (az, el) in enumerate(positions):
             if callable(get_nearest):
                 hrir_l, hrir_r = get_nearest(az, el)
             else:
                 hrir_l, hrir_r = self.hrtf.get_hrir(azimuth=az, elevation=el)
 
-            hrirs.append((
-                np.asarray(hrir_l, dtype=np.float32),
-                np.asarray(hrir_r, dtype=np.float32),
-            ))
+            hrir_l = np.asarray(hrir_l, dtype=np.float32)
+            hrir_r = np.asarray(hrir_r, dtype=np.float32)
+
+            if thetas is not None:
+                h = self.directivity.build_filter(thetas[i], self.sr, n_taps=self.directivity_n_taps)
+                hrir_l = fftconvolve(hrir_l, h, mode="same").astype(np.float32)
+                hrir_r = fftconvolve(hrir_r, h, mode="same").astype(np.float32)
+
+            hrirs.append((hrir_l, hrir_r))
 
         return hrirs
 
@@ -235,7 +301,8 @@ class DynamicConvolver:
         np.ndarray, shape (N, 2)
         """
         positions = self._compute_segment_positions()
-        hrirs     = self._fetch_hrirs(positions)
+        thetas    = self._compute_segment_emission_angles() if self.directivity is not None else None
+        hrirs     = self._fetch_hrirs(positions, thetas=thetas)
         gains     = self._compute_segment_gains()
 
         from .WOLAEngine import WOLAEngine
@@ -275,5 +342,6 @@ class DynamicConvolver:
             f"DynamicConvolver(sr={self.sr} Hz, "
             f"moteur={engine_name}, {params}, "
             f"auditeur={'mobile' if self.listener is not None else 'fixe'}, "
+            f"directivité={'oui' if self.directivity is not None else 'non'}, "
             f"rendu={'oui' if done else 'non'})"
         )

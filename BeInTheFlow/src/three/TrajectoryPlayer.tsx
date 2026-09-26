@@ -3,10 +3,11 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { useTrajectoryStore } from "../store/trajectoryStore";
 import { useSceneStore } from "../store/sceneStore";
+import { useListenerStore } from "../store/listenerStore";
 import { trajectoryPointAt } from "../utils/trajectorySampling";
-import { threeToSofa } from "../utils/sofaCoords";
+import { threeToSofa, offsetByListener } from "../utils/sofaCoords";
 import { getAudioElement } from "../utils/audioEngine";
-import type { TrajectoryDTO } from "../types";
+import type { SoundSourceDTO, TrajectoryDTO } from "../types";
 
 const BASE_PERIOD_SECONDS = 8; // durée d'une boucle complète à vitesse = 1
 const point = new THREE.Vector3();
@@ -14,13 +15,18 @@ const point = new THREE.Vector3();
 function moveSourceAlong(
   trajectory: TrajectoryDTO,
   t: number,
-  sourceId: string,
+  source: SoundSourceDTO,
   updateSource: (id: string, patch: { azimuth: number; elevation: number; distance: number }) => void,
 ) {
   const p = trajectoryPointAt(trajectory, t);
-  point.set(p.x, p.y, p.z);
+  // Verrouillé sur l'auditeur : le centre de la trajectoire suit la position
+  // courante de l'auditeur (même logique que SourceNode.tsx pour un drag manuel).
+  const world = source.lockToListener
+    ? offsetByListener(p, useListenerStore.getState().currentPose.x, useListenerStore.getState().currentPose.y)
+    : p;
+  point.set(world.x, world.y, world.z);
   const sofa = threeToSofa(point);
-  updateSource(sourceId, {
+  updateSource(source.id, {
     azimuth: Math.round(sofa.azimuth * 10) / 10,
     elevation: Math.round(sofa.elevation * 10) / 10,
     distance: Math.round(sofa.distance * 100) / 100,
@@ -56,7 +62,7 @@ export default function TrajectoryPlayer() {
         const t = elapsed.current / period;
         sources
           .filter((s) => s.trajectoryId === trajectory.id)
-          .forEach((s) => moveSourceAlong(trajectory, t, s.id, updateSource));
+          .forEach((s) => moveSourceAlong(trajectory, t, s, updateSource));
       }
     }
 
@@ -70,7 +76,7 @@ export default function TrajectoryPlayer() {
         if (!trajectory) continue;
         const period = BASE_PERIOD_SECONDS / Math.max(trajectory.speed, 0.01);
         const t = audio.currentTime / period;
-        moveSourceAlong(trajectory, t, source.id, updateSource);
+        moveSourceAlong(trajectory, t, source, updateSource);
       }
     }
   });

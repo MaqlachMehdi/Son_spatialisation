@@ -24,6 +24,8 @@ import soundfile as sf
 from hrtf import HRTF
 from .Trajectory import Trajectory
 from .Listener import Listener
+from .Directivity import Directivity
+from .SourceOrientation import SourceOrientation
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -33,11 +35,13 @@ from .Listener import Listener
 @dataclass
 class _DynamicSource:
     """Représente une source avec son signal chargé, sa trajectoire et son gain."""
-    signal:     np.ndarray
-    sr:         int
-    trajectory: Trajectory
-    gain:       float = 1.0
-    label:      str   = ""
+    signal:             np.ndarray
+    sr:                 int
+    trajectory:         Trajectory
+    gain:               float = 1.0
+    label:              str   = ""
+    directivity:        Directivity | None = None
+    source_orientation: SourceOrientation | None = None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -66,6 +70,10 @@ class DynamicSoundscape:
         Auditeur commun à toutes les sources de la scène (position +
         orientation mobiles). Si None (défaut) : auditeur implicite fixe à
         l'origine, comportement historique inchangé.
+    directivity : Directivity | None
+        Directivité d'émission par défaut, appliquée à toute source qui n'a
+        pas de directivity propre (cf. add_source). Si None (défaut) :
+        sources omnidirectionnelles, comportement historique inchangé.
 
     Attributs publics (disponibles après render())
     ----------------------------------------------
@@ -81,11 +89,13 @@ class DynamicSoundscape:
         overlap_ms: float | None = None,
         crossfade_type: str = "cosine",
         listener: Listener | None = None,
+        directivity: Directivity | None = None,
     ) -> None:
         self.hrtf          = hrtf
         self.segment_ms    = float(segment_ms)
         self.crossfade_type = crossfade_type
         self.listener       = listener
+        self.directivity    = directivity
 
         # overlap automatique : au moins 110 % de la durée HRIR
         if overlap_ms is None:
@@ -109,6 +119,8 @@ class DynamicSoundscape:
         trajectory: Trajectory,
         gain: float = 1.0,
         label: str = "",
+        directivity: Directivity | None = None,
+        source_orientation: SourceOrientation | None = None,
     ) -> None:
         """
         Ajoute une source dynamique au paysage sonore.
@@ -125,7 +137,24 @@ class DynamicSoundscape:
             Gain linéaire relatif (défaut : 1.0).
         label : str
             Nom de la source pour les logs (optionnel).
+        directivity : Directivity | None
+            Directivité propre à cette source. Si None, utilise
+            self.directivity (directivité par défaut de la scène, elle-même
+            optionnelle). Nécessite source_orientation (propre ou hérité —
+            mais source_orientation n'a pas de valeur par défaut au niveau
+            scène, chaque source ayant sa propre trajectoire).
+        source_orientation : SourceOrientation | None
+            Axe d'émission propre à cette source. Requis dès qu'une
+            directivity s'applique à cette source (propre ou héritée).
         """
+        effective_directivity = directivity if directivity is not None else self.directivity
+        if effective_directivity is not None and source_orientation is None:
+            lbl_preview = label or f"source_{len(self._sources) + 1}"
+            raise ValueError(
+                f"Source '{lbl_preview}' : une directivity s'applique (propre ou héritée de la "
+                f"scène) mais aucun source_orientation n'a été fourni."
+            )
+
         sr_target = self.hrtf.sample_rate
 
         if isinstance(signal, (str, Path)):
@@ -157,7 +186,8 @@ class DynamicSoundscape:
             )
             self._sources.append(
                 _DynamicSource(signal=audio, sr=sr_target, trajectory=trajectory,
-                               gain=gain, label=lbl)
+                               gain=gain, label=lbl, directivity=directivity,
+                               source_orientation=source_orientation)
             )
 
         else:
@@ -173,7 +203,8 @@ class DynamicSoundscape:
             )
             self._sources.append(
                 _DynamicSource(signal=audio, sr=sr_target, trajectory=trajectory,
-                               gain=gain, label=lbl)
+                               gain=gain, label=lbl, directivity=directivity,
+                               source_orientation=source_orientation)
             )
 
     # ══════════════════════════════════════════════════════════════════════
@@ -205,14 +236,16 @@ class DynamicSoundscape:
             )
             from engine import DynamicConvolver
             convolver = DynamicConvolver(
-                hrtf           = self.hrtf,
-                signal         = src.signal,
-                sr             = src.sr,
-                trajectory     = src.trajectory,
-                segment_ms     = self.segment_ms,
-                overlap_ms     = self.overlap_ms,
-                crossfade_type = self.crossfade_type,
-                listener       = self.listener,
+                hrtf               = self.hrtf,
+                signal             = src.signal,
+                sr                 = src.sr,
+                trajectory         = src.trajectory,
+                segment_ms         = self.segment_ms,
+                overlap_ms         = self.overlap_ms,
+                crossfade_type     = self.crossfade_type,
+                listener           = self.listener,
+                directivity        = src.directivity if src.directivity is not None else self.directivity,
+                source_orientation = src.source_orientation,
             )
             out = convolver.run()           # (M, 2)
             out = (out * src.gain).astype(np.float32)
@@ -287,5 +320,6 @@ class DynamicSoundscape:
             f"overlap={self.overlap_ms:.1f} ms, "
             f"crossfade='{self.crossfade_type}', "
             f"auditeur={'mobile' if self.listener is not None else 'fixe'}, "
+            f"directivité={'oui' if self.directivity is not None else 'non'}, "
             f"rendu={'oui' if self.rendered is not None else 'non'})"
         )

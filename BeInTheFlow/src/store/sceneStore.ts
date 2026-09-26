@@ -28,6 +28,7 @@ function makeSource(overrides: Partial<SoundSourceDTO> = {}): SoundSourceDTO {
     color,
     modelId: null,
     muted: false,
+    lockToListener: true,
     ...overrides,
   };
 }
@@ -71,7 +72,13 @@ export const useSceneStore = create<SceneState>((set) => ({
 
   hydrateSources: (sources) => {
     sources.forEach((s) => bumpNextId(s.id));
-    set({ sources, selectedId: null });
+    // lockToListener: true par défaut si absent (compte sauvegardé avant
+    // l'introduction du champ, ou réponse serveur non encore à jour).
+    const normalized = sources.map((s) => ({
+      ...s,
+      lockToListener: s.lockToListener ?? true,
+    }));
+    set({ sources: normalized, selectedId: null });
   },
 
   resetToDefault: () => set({ sources: [makeSource({ azimuth: 30, elevation: 0 })], selectedId: null }),

@@ -53,6 +53,26 @@ export function sofaCartesianToThree(x: number, y: number, z: number): Vec3 {
 // three.js, l'axe de tangage (Y sofa, gauche/droite) devient l'axe X
 // three.js, et l'axe de roulis (X sofa, "devant") devient -Z three.js — d'où
 // l'angle inversé sur roll pour rester sur l'axe +Z standard de three.js.
+// Décale une position Three.js par la position au sol de l'auditeur (x,y en
+// mètres, convention SOFA — cf. ListenerPose/useListenerStore). Utilisé pour
+// les sources "verrouillées sur l'auditeur" (SoundSourceDTO.lockToListener) :
+// leur azimuth/elevation/distance est alors interprété relativement à
+// l'auditeur plutôt qu'à l'origine fixe du monde. Décalage en position
+// seulement (pas de rotation par yaw/pitch/roll) — le "centre du cercle"
+// suit l'auditeur, la forme de la trajectoire ne tourne pas avec sa tête.
+export function offsetByListener(pos: Vec3, listenerX: number, listenerY: number): Vec3 {
+  const l = sofaCartesianToThree(listenerX, listenerY, 0);
+  return { x: pos.x + l.x, y: pos.y + l.y, z: pos.z + l.z };
+}
+
+// Inverse de offsetByListener — retire la position de l'auditeur d'un point
+// Three.js avant de le reconvertir en azimuth/elevation/distance stockable
+// (ex: après un drag dans la scène, pour une source verrouillée).
+export function unoffsetByListener(pos: Vec3, listenerX: number, listenerY: number): Vec3 {
+  const l = sofaCartesianToThree(listenerX, listenerY, 0);
+  return { x: pos.x - l.x, y: pos.y - l.y, z: pos.z - l.z };
+}
+
 export function yprToThreeQuaternion(yawDeg: number, pitchDeg: number, rollDeg: number): THREE.Quaternion {
   const yaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(yawDeg));
   const pitch = new THREE.Quaternion().setFromAxisAngle(

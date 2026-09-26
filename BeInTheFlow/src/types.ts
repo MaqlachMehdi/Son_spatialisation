@@ -11,6 +11,12 @@ export interface SoundSourceDTO {
   trajectoryId?: string | null;
   modelId?: string | null; // id du modèle 3D (InstrumentCatalog) affiché à la place du cercle, null = cercle par défaut
   muted: boolean;
+  // true (défaut) : azimuth/elevation/distance sont interprétés relativement
+  // à la position courante de l'auditeur (useListenerStore.currentPose) —
+  // le cercle/la trajectoire "suit" l'auditeur quand il se déplace (drag
+  // manuel ou lecture d'une trajectoire d'auditeur enregistrée).
+  // false : position fixe dans le repère MONDE, indépendante de l'auditeur.
+  lockToListener: boolean;
 }
 
 // Types de trajectoires — mêmes concepts que src/scene/Trajectory.py

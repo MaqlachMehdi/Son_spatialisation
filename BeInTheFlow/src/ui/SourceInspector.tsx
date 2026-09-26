@@ -91,6 +91,20 @@ export default function SourceInspector({ source }: SourceInspectorProps) {
         </select>
       </label>
 
+      <label className="field field-checkbox">
+        <span>Fixe listener</span>
+        <input
+          type="checkbox"
+          checked={source.lockToListener}
+          onChange={(e) => updateSource(source.id, { lockToListener: e.target.checked })}
+        />
+      </label>
+      <p className="field-group-label">
+        {source.lockToListener
+          ? "Le centre de la source/trajectoire suit l'auditeur quand il se déplace."
+          : "Position fixe dans la pièce, indépendante des déplacements de l'auditeur."}
+      </p>
+
       {field("azimuth", "Azimut (°)", 1, 0, 360)}
       {field("elevation", "Élévation (°)", 1, -90, 90)}
       {field("distance", "Distance (m)", 0.1, 0.1)}

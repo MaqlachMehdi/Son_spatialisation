@@ -3,8 +3,9 @@ import { useThree, type ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
 import { Html } from "@react-three/drei";
 import type { SoundSourceDTO } from "../types";
-import { sofaToThree, threeToSofa } from "../utils/sofaCoords";
+import { sofaToThree, threeToSofa, offsetByListener, unoffsetByListener } from "../utils/sofaCoords";
 import { useSceneStore } from "../store/sceneStore";
+import { useListenerStore } from "../store/listenerStore";
 import { getInstrument } from "./instrumentCatalog";
 import InstrumentModel from "./InstrumentModel";
 
@@ -27,13 +28,24 @@ type DragMode = "none" | "ground" | "elevation";
 export default function SourceNode({ source, selected, onSelect, onDragStateChange }: SourceNodeProps) {
   const { camera, gl } = useThree();
   const updateSource = useSceneStore((s) => s.updateSource);
-  const pos = sofaToThree(source.azimuth, source.elevation, source.distance);
+  const listenerPose = useListenerStore((s) => s.currentPose);
+  const rawPos = sofaToThree(source.azimuth, source.elevation, source.distance);
+  const pos = source.lockToListener
+    ? offsetByListener(rawPos, listenerPose.x, listenerPose.y)
+    : rawPos;
   const instrument = getInstrument(source.modelId);
   const dragMode = useRef<DragMode>("none");
   const startWorldPos = useRef(new THREE.Vector3());
 
   const applyIntersection = (point: THREE.Vector3) => {
-    const { azimuth, elevation, distance } = threeToSofa(point);
+    // Une source verrouillée sur l'auditeur est draguée relativement à sa
+    // position courante : on retire l'offset avant de reconvertir en
+    // azimuth/elevation/distance, pour que ces valeurs restent "vues depuis
+    // l'auditeur" (cohérent avec le rendu ci-dessus).
+    const local = source.lockToListener
+      ? unoffsetByListener(point, listenerPose.x, listenerPose.y)
+      : point;
+    const { azimuth, elevation, distance } = threeToSofa(local);
     updateSource(source.id, {
       azimuth: Math.round(azimuth * 10) / 10,
       elevation: Math.round(elevation * 10) / 10,

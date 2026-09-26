@@ -35,6 +35,7 @@ class SourcePayload(CamelModel):
     muted: bool
     model_id: str | None = None
     trajectory_id: str | None = None
+    lock_to_listener: bool = True
 
 
 class TrajectoryPayload(CamelModel):

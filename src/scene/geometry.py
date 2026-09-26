@@ -158,3 +158,42 @@ def slerp_rotation(R0: np.ndarray, R1: np.ndarray, alpha: float) -> np.ndarray:
     q0 = quaternion_from_rotation(R0)
     q1 = quaternion_from_rotation(R1)
     return rotation_from_quaternion(slerp_quaternion(q0, q1, alpha))
+
+
+def slerp_unit_vector(u0: np.ndarray, u1: np.ndarray, alpha: float) -> np.ndarray:
+    """
+    Interpolation sphérique (grand cercle) entre deux vecteurs unitaires.
+
+    Utilisé pour interpoler une direction (axe d'émission d'une source, par
+    exemple) sans passer par des angles az/el qui se comportent mal près des
+    pôles ou lors du franchissement de 0°/360°.
+    """
+    dot = float(np.clip(np.dot(u0, u1), -1.0, 1.0))
+    if dot > 0.9995:
+        v = u0 + alpha * (u1 - u0)
+        return v / np.linalg.norm(v)
+    theta_0 = np.arccos(dot)
+    theta = theta_0 * alpha
+    u2 = u1 - u0 * dot
+    u2 = u2 / np.linalg.norm(u2)
+    return u0 * np.cos(theta) + u2 * np.sin(theta)
+
+
+def emission_angle_deg(
+    direction: np.ndarray, source_pos: np.ndarray, listener_pos: np.ndarray
+) -> float:
+    """
+    Angle (degrés) entre l'axe d'émission d'une source et la direction
+    source -> auditeur.
+
+    theta = 0°   : l'auditeur est pile dans l'axe d'émission (on-axis).
+    theta = 180° : l'auditeur est dans le dos de la source.
+
+    C'est l'angle à utiliser avec Directivity.magnitude()/build_filter().
+    """
+    to_listener = np.asarray(listener_pos, dtype=float) - np.asarray(source_pos, dtype=float)
+    norm = float(np.linalg.norm(to_listener))
+    if norm < 1e-9:
+        return 0.0
+    cos_theta = float(np.dot(direction, to_listener / norm))
+    return float(np.degrees(np.arccos(np.clip(cos_theta, -1.0, 1.0))))
