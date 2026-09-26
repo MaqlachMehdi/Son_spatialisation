@@ -92,13 +92,21 @@ Le `HRTFInterpolator` est chargé une seule fois au démarrage (`app.state`) plu
 
 ## Écouter les exemples *(casque recommandé)*
 
-<table>
-<tr>
-<td align="center"><b>Cercle hors grille</b><br><sub>HRTFInterpolator — rotation circulaire<br>sur positions hors grille de mesure</sub><br>[▶️ Écouter](sound/generated/cercle_hors_grille.wav)</td>
-<td align="center"><b>Ping-pong Do→La</b><br><sub>DynamicConvolver WOLAEngine —<br>source en mouvement gauche/droite</sub><br>[▶️ Écouter](sound/generated/pingpong_do_la.wav)</td>
-<td align="center"><b>Tchaïkovski — scène complète</b><br><sub>InstrumentSpatializer — orchestre entier<br>reconstruit depuis The Spheres dataset</sub><br>[▶️ Écouter](sound/tchaikovsky_full.wav)</td>
-</tr>
-</table>
+<!-- Un lecteur vidéo intégré (URL user-attachments) ne s'affiche que si elle
+     est seule sur son propre paragraphe, hors de tout bloc HTML (table,
+     details...) — d'où la présentation verticale plutôt qu'un tableau. -->
+
+**Cercle hors grille** — HRTFInterpolator, rotation circulaire sur positions hors grille de mesure
+
+https://github.com/user-attachments/assets/dd51e80f-832a-41d7-a014-6b50ca5d1d71
+
+**Ping-pong Do→La** — DynamicConvolver WOLAEngine, source en mouvement gauche/droite
+
+https://github.com/user-attachments/assets/4e97354e-cff8-44e0-9159-d78ce9afc154
+
+**Tchaïkovski — scène complète** — InstrumentSpatializer, orchestre entier reconstruit depuis The Spheres dataset
+
+https://github.com/user-attachments/assets/c59b8f7f-bd9b-4542-b9de-aa4aaf101721
 
 ---
 
