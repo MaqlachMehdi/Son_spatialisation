@@ -23,8 +23,10 @@ dataset_live/Tchaikovsky/
 dataset_live/TheSpheresDataset-RIRs/
 dataset/Database-Master_V2-1/
 
-# Docs (PDF/tex de recherche) — jamais versionnés
-docs/
+# Docs (PDF/tex de recherche) — jamais versionnés, sauf les médias de démo du README
+docs/*
+!docs/screenshots/
+!docs/screenshots/**
 
 # Historique d'édition VSCode
 .history/

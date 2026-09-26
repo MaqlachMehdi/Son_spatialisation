@@ -1,6 +1,98 @@
-# Spatialisation Sonore Binaurale — HRTF
+# Spatialisation Sonore Binaurale : HRTF
 
-Système de spatialisation audio 3D par convolution avec des HRTFs mesurées sur sujet humain. Prend un signal mono, une position dans l'espace (azimut, élévation, distance) et produit un fichier stéréo binaural — à écouter au casque.
+Système de spatialisation audio 3D par convolution avec des HRTFs mesurées sur sujet humain. Prend un signal mono, une position dans l'espace (azimut, élévation, distance) et produit un fichier stéréo binaural à écouter au casque.
+
+---
+
+## [BeInTheFlow](https://beintheflow.site/) : l'application
+
+<!-- Vidéo de démonstration de l'interface BeInTheFlow — déposer le fichier à
+     ce chemin (ex. export d'un enregistrement d'écran en .mp4) pour qu'elle
+     s'affiche. Sur GitHub, le tag <video> avec un chemin relatif du dépôt est
+     résolu en lien "raw" et lu en ligne, comme les <audio> plus bas. -->
+<p align="center">
+  <video src="docs/screenshots/beintheflow_demo.mp4" controls width="800">
+    Ta visionneuse ne supporte pas la lecture vidéo intégrée —
+    <a href="docs/screenshots/beintheflow_demo.mp4">télécharger la vidéo</a>.
+  </video>
+</p>
+
+**BeInTheFlow** est l'application web qui rend ce moteur de spatialisation manipulable  : une scène 3D dans laquelle on place des sources sonores et un auditeur, on leur dessine des trajectoires, et on écoute le rendu binaural en direct, au casque.
+
+
+### Fonctionnalités : prise en main rapide
+
+1. **Placer une source sonore**  dans le tiroir *Sources* , cliquer sur « + Ajouter une source », puis lui assigner un fichier audio et, en option, un modèle 3D représentant l'instrument.
+2. **Positionner la source**  dans la scène, en la faisant glisser directement, ou dans l'inspecteur via l'azimut, l'élévation, la distance et le gain ; l'option « Fixe listener » permet de l'ancrer au déplacement de l'auditeur plutôt qu'à la pièce.
+3. **Dessiner une trajectoire**  dans le tiroir *Trajectoires*, ajouter une trajectoire et choisir son type (circulaire, elliptique, linéaire, rectiligne, ou points de passage libres) puis l'associer à une source pour la faire bouger dans le temps.
+4. **Activer l'auditeur dynamique**  le bouton « silhouette qui marche » capture l'orientation et le déplacement du téléphone (gyroscope) pour piloter l'auditeur en temps réel, comme si on marchait dans la scène.
+5. **Choisir sa HRTF et ses sons** dans le tiroir *Réglages*, sélectionner la HRTF utilisée pour le rendu, importer un fichier audio personnel ou en enregistrer un directement au micro (jusqu'à 2 minutes).
+6. **Écouter et exporter** le bouton *Play* envoie la scène (sources + trajectoires) au backend, joue le rendu binaural dès qu'il est prêt, et propose son téléchargement en WAV.
+7. **Créer un compte** — nécessaire pour importer ou enregistrer ses propres sons et retrouver sa scène d'une session à l'autre (tiroir *Compte*, icône silhouette).
+
+---
+
+## Architecture backend de BeInTheFlow
+
+L'API (`src/api/`, FastAPI) expose le moteur de spatialisation au frontend et gère la persistance des comptes, des scènes et des sons personnels. Elle est volontairement mince : chaque router délègue soit à la base de données, soit au pipeline de spatialisation déjà existant (`src/hrtf`, `src/engine`, `src/scene`), sans dupliquer de logique.
+
+```mermaid
+flowchart TB
+    FE["Frontend BeInTheFlow<br/>React + Three.js"]
+
+    subgraph API["API FastAPI (src/api)"]
+        SRV["server.py<br/>CORS + montage des routers"]
+        AUTH["auth (fastapi-users)<br/>/auth/cookie/*, /auth/register, /users/me"]
+        R_WORK["routers/workspace.py<br/>GET, PUT /workspace"]
+        R_SOUNDS["routers/sounds.py<br/>GET /sounds, POST/DELETE /sounds/upload"]
+        R_HRTFS["routers/hrtfs.py<br/>GET /hrtfs, PUT /hrtfs/active"]
+        R_RENDER["routers/render.py<br/>POST /render"]
+    end
+
+    subgraph ENGINE["Moteur de spatialisation (src/hrtf, engine, scene)"]
+        INTERP["HRTFInterpolator<br/>tenu en mémoire dans app.state"]
+        SCAPE["Soundscape / DynamicSoundscape"]
+    end
+
+    subgraph DB["PostgreSQL — SQLAlchemy async + Alembic"]
+        T_USER[("User")]
+        T_SRC[("Source")]
+        T_TRAJ[("Trajectory")]
+        T_ASSET[("AudioAsset")]
+    end
+
+    subgraph FS["Stockage fichiers"]
+        SOUND["sound/ — catalogue public"]
+        UPLOADS["sound_uploads/ — sons personnels"]
+        DATASET["dataset/*.sofa — HRTFs IRCAM LISTEN"]
+    end
+
+    FE <-- "HTTP JSON + cookie httpOnly" --> SRV
+    SRV --> AUTH & R_WORK & R_SOUNDS & R_HRTFS & R_RENDER
+
+    AUTH --> T_USER
+    R_WORK --> T_SRC & T_TRAJ
+    R_SOUNDS --> T_ASSET
+    R_SOUNDS --> SOUND & UPLOADS
+    R_RENDER -- "résout les chemins audio" --> SOUND & UPLOADS
+    R_HRTFS -- "recharge à chaud" --> INTERP
+    R_HRTFS --> DATASET
+    R_RENDER --> SCAPE
+    SCAPE --> INTERP
+    R_RENDER -- "WAV en streaming" --> FE
+```
+
+**Points clés :**
+
+| Router | Rôle |
+|---|---|
+| `auth` (fastapi-users) | Inscription, connexion/déconnexion par cookie httpOnly, gestion du compte courant |
+| `workspace` | Sauvegarde/restauration en un bloc des sources et trajectoires de l'utilisateur connecté |
+| `sounds` | Catalogue public (`sound/`) + sons importés/enregistrés par compte (`sound_uploads/`), avec conversion ffmpeg des formats compressés (mp3/webm/…) |
+| `hrtfs` | Liste les `.sofa` disponibles et permet de changer à chaud la HRTF utilisée par `/render`, sans redémarrer le serveur |
+| `render` | Point d'entrée central : reçoit sources + trajectoires, choisit rendu statique (`Soundscape`) ou dynamique (`DynamicSoundscape`) par source, et streame le WAV binaural résultant |
+
+Le `HRTFInterpolator` est chargé une seule fois au démarrage (`app.state`) plutôt qu'à chaque requête : un rendu est une opération CPU-bound, déportée dans un threadpool pour ne jamais bloquer la boucle asynchrone de FastAPI.
 
 ---
 
