@@ -6,16 +6,10 @@ Système de spatialisation audio 3D par convolution avec des HRTFs mesurées sur
 
 ## [BeInTheFlow](https://beintheflow.site/) : l'application
 
-<!-- Vidéo de démonstration de l'interface BeInTheFlow — déposer le fichier à
-     ce chemin (ex. export d'un enregistrement d'écran en .mp4) pour qu'elle
-     s'affiche. Sur GitHub, le tag <video> avec un chemin relatif du dépôt est
-     résolu en lien "raw" et lu en ligne, comme les <audio> plus bas. -->
-<p align="center">
-  <video src="docs/screenshots/beintheflow_demo.mp4" controls width="800">
-    Ta visionneuse ne supporte pas la lecture vidéo intégrée —
-    <a href="docs/screenshots/beintheflow_demo.mp4">télécharger la vidéo</a>.
-  </video>
-</p>
+<!-- Vidéo de démonstration de l'interface BeInTheFlow, hébergée sur le CDN
+     d'assets GitHub (upload par glisser-déposer dans l'éditeur web) — un
+     chemin relatif du dépôt ne s'affiche PAS en ligne sur github.com. -->
+https://github.com/user-attachments/assets/41ab9031-6bd4-4ccf-b9e1-178da2d6d298
 
 **BeInTheFlow** est l'application web qui rend ce moteur de spatialisation manipulable  : une scène 3D dans laquelle on place des sources sonores et un auditeur, on leur dessine des trajectoires, et on écoute le rendu binaural en direct, au casque.
 
@@ -100,9 +94,9 @@ Le `HRTFInterpolator` est chargé une seule fois au démarrage (`app.state`) plu
 
 <table>
 <tr>
-<td align="center"><b>Cercle hors grille</b><br><sub>HRTFInterpolator — rotation circulaire<br>sur positions hors grille de mesure</sub><br><audio controls><source src="sound/generated/cercle_hors_grille.wav" type="audio/wav"></audio></td>
-<td align="center"><b>Ping-pong Do→La</b><br><sub>DynamicConvolver WOLAEngine —<br>source en mouvement gauche/droite</sub><br><audio controls><source src="sound/generated/pingpong_do_la.wav" type="audio/wav"></audio></td>
-<td align="center"><b>Tchaïkovski — scène complète</b><br><sub>InstrumentSpatializer — orchestre entier<br>reconstruit depuis The Spheres dataset</sub><br><audio controls><source src="sound/tchaikovsky_full.wav" type="audio/wav"></audio></td>
+<td align="center"><b>Cercle hors grille</b><br><sub>HRTFInterpolator — rotation circulaire<br>sur positions hors grille de mesure</sub><br>[▶️ Écouter](sound/generated/cercle_hors_grille.wav)</td>
+<td align="center"><b>Ping-pong Do→La</b><br><sub>DynamicConvolver WOLAEngine —<br>source en mouvement gauche/droite</sub><br>[▶️ Écouter](sound/generated/pingpong_do_la.wav)</td>
+<td align="center"><b>Tchaïkovski — scène complète</b><br><sub>InstrumentSpatializer — orchestre entier<br>reconstruit depuis The Spheres dataset</sub><br>[▶️ Écouter](sound/tchaikovsky_full.wav)</td>
 </tr>
 </table>
 
@@ -193,7 +187,7 @@ sf.write("sound/tchaikovsky_full.wav", (mix / peak).astype("float32"), 48000)
 ```
 
 **Exemple — scène Tchaïkovski complète :**
-<audio controls><source src="sound/tchaikovsky_full.wav" type="audio/wav"></audio>
+[▶️ Écouter](sound/tchaikovsky_full.wav)
 
 ---
 
@@ -317,7 +311,7 @@ Pour les positions hors grille de mesure. Évite l'artefact de filtre en peigne 
    - Phase minimum reconstruite par cepstre réel
 
 **Exemple — rotation circulaire hors grille :**
-<audio controls><source src="sound/generated/cercle_hors_grille.wav" type="audio/wav"></audio>
+[▶️ Écouter](sound/generated/cercle_hors_grille.wav)
 
 ### 3. Fonctions utilitaires partagées — `hrtf_utils`
 
@@ -356,7 +350,7 @@ Convolution fréquentielle via `fftconvolve`. Normalisation binaural conjointe (
 Combine N sources statiques spatialisées indépendamment puis mixées.
 
 **Exemple — Do + Si spatialisés en positions fixes :**
-<audio controls><source src="sound/generated/soundscape_do_si.wav" type="audio/wav"></audio>
+[▶️ Écouter](sound/generated/soundscape_do_si.wav)
 
 ### 8. Trajectoires — `Trajectory`
 
@@ -369,7 +363,7 @@ Combine N sources statiques spatialisées indépendamment puis mixées.
 | `CustomTrajectory` | Points de passage libres avec interpolation cubique |
 
 **Exemple — trajectoire elliptique :**
-<audio controls><source src="sound/generated/ellipse_interp.wav" type="audio/wav"></audio>
+[▶️ Écouter](sound/generated/ellipse_interp.wav)
 
 ### 9. Convolution dynamique — `DynamicConvolver` + moteurs
 
@@ -389,7 +383,7 @@ conv = DynamicConvolver(hrtf=hrtf, signal=signal, sr=sr, trajectory=traj, hop_ms
 Fenêtre de Hann périodique : `w[n] + w[n + hop] = 1.0` exactement — reconstruction parfaite garantie.
 
 **Exemple — ping-pong Do→La (source en mouvement) :**
-<audio controls><source src="sound/generated/pingpong_do_la.wav" type="audio/wav"></audio>
+[▶️ Écouter](sound/generated/pingpong_do_la.wav)
 
 ### 10. Paysage sonore dynamique — `DynamicSoundscape`
 
@@ -676,7 +670,7 @@ sf.write("output.wav", output, 44100)
 ### Violon spatialisé (InstrumentSpatializer)
 
 **Violin_1 — reconstruction binaurale depuis enregistrement multi-micros :**
-<audio controls><source src="sound/violin_1_spatial.wav" type="audio/wav"></audio>
+[▶️ Écouter](sound/violin_1_spatial.wav)
 
 ### HRTF générique depuis plusieurs sujets
 ```python
